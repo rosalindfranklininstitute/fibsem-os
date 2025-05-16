@@ -12,6 +12,7 @@ from typing import List, Optional, Tuple, Union, Set, Any, Dict, Type, TypeVar
 
 import numpy as np
 import tifffile as tff
+from numpy.typing import NDArray
 
 import fibsem
 from fibsem.config import METADATA_VERSION, SUPPORTED_COORDINATE_SYSTEMS
