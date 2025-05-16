@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass, field, fields, asdict
 from typing import Dict, List, Tuple, Union, Any, Optional, Type, ClassVar, TypeVar, Generic
+from os import PathLike
 
 import numpy as np
 from numpy.typing import NDArray
