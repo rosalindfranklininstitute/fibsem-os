@@ -15,6 +15,7 @@ from fibsem.structures import (
     FibsemImage,
     FibsemLineSettings,
     FibsemRectangleSettings,
+    FibsemBitmapSettings,
     FibsemPatternSettings,
     Point,
 )
@@ -565,6 +566,56 @@ def draw_rectangle_shape(pattern_settings: FibsemRectangleSettings, image_shape:
     return DrawnPattern(pattern=shape, position=pos, is_exclusion=pattern_settings.is_exclusion)
 
 
+def draw_bitmap_shape(
+    pattern_settings: FibsemBitmapSettings,
+    image_shape: Tuple[int, int],
+    pixelsize: float,
+) -> DrawnPattern:
+    from PIL import Image
+
+    # image parameters (centre, pixel size)
+    icy, icx = image_shape[0] // 2, image_shape[1] // 2
+    pixelsize_x, pixelsize_y = pixelsize, pixelsize
+
+    # pattern parameters
+    width = pattern_settings.width
+    height = pattern_settings.height
+    centre_x = pattern_settings.centre_x
+    centre_y = pattern_settings.centre_y
+    rotation = pattern_settings.rotation
+
+    # pattern to pixel coords
+    w = int(width / pixelsize_x)
+    h = int(height / pixelsize_y)
+    cx = int(icx + (centre_x / pixelsize_x))  # Fix: use pixelsize_x for x coordinate
+    cy = int(icy - (centre_y / pixelsize_y))
+
+    bitmap = pattern_settings.bitmap
+
+    if bitmap is None:
+        bitmap = np.zeros((1, 1, 2), dtype=float)
+
+    image_bmp = Image.fromarray(bitmap[:, :, 0].squeeze(-1).astype(float))
+
+    if pattern_settings.flip_y:
+        image_bmp = image_bmp.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+
+    image_resized = image_bmp.resize((w, h))
+
+    if not np.isclose(rotation, 0):
+        image_resized = image_resized.rotate(-pattern_settings.rotation, expand=True)
+
+    # Create base rectangle shape
+    shape = np.asarray(image_resized, dtype=np.float_)
+
+    # get pattern centre in image coordinates
+    pos = Point(x=cx, y=cy)
+
+    return DrawnPattern(
+        pattern=shape, position=pos, is_exclusion=pattern_settings.is_exclusion
+    )
+
+
 def draw_line_shape(
     pattern_settings: FibsemLineSettings,
     image_shape: Tuple[int, int],
@@ -603,6 +654,8 @@ def draw_pattern_shape(ps: FibsemPatternSettings, image_shape: Tuple[int, int], 
         return draw_rectangle_shape(ps, image_shape, pixelsize)
     elif isinstance(ps, FibsemLineSettings):
         return draw_line_shape(ps, image_shape, pixelsize)
+    elif isinstance(ps, FibsemBitmapSettings):
+        return draw_bitmap_shape(ps, image_shape, pixelsize)
     else:
         raise ValueError(f"Unsupported shape type {type(ps)}")
 
