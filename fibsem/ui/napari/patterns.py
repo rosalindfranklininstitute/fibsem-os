@@ -181,13 +181,12 @@ def create_crosshair_shape(centre_point: Point,
 
 def convert_bitmap_pattern_to_napari_image(
         pattern_settings: FibsemBitmapSettings, shape: Tuple[int, int], pixelsize: float) -> np.ndarray:
-
     icy, icx = get_image_pixel_centre(shape)
 
     resize_x = int(pattern_settings.width / pixelsize)
     resize_y = int(pattern_settings.height / pixelsize)
 
-    
+
     image_bmp = Image.open(pattern_settings.path)
     image_resized = image_bmp.resize((resize_x, resize_y))
     image_rotated = image_resized.rotate(-pattern_settings.rotation, expand=True)
@@ -203,6 +202,7 @@ def convert_bitmap_pattern_to_napari_image(
 
     
     return img_array, translate_position
+
 
 def remove_all_napari_shapes_layers(viewer: napari.Viewer, layer_type: NapariLayer = NapariShapesLayers, ignore: List[str] = []):
     """Remove all shapes layers from the napari viewer, excluding a specified list."""
