@@ -107,9 +107,6 @@ class BitmapPattern(BasePattern[FibsemBitmapSettings]):
             path = None
         array = self.array
 
-        if array is None and path is None:
-            raise AttributeError("BitmapPattern requires bitmap or path must be set")
-
         shape = FibsemBitmapSettings(
             width=self.width,
             height=self.height,
@@ -156,11 +153,6 @@ class TrenchBitmapPattern(BasePattern[FibsemBitmapSettings]):
         if not path:
             path = None
         array = self.array
-
-        if array is None and path is None:
-            raise AttributeError(
-                "TrenchBitmapPattern requires bitmap or path must be set"
-            )
 
         # calculate the centre of the upper and lower trench
         centre_lower_y = self.point.y - (
