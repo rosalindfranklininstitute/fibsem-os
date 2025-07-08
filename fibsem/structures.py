@@ -1045,6 +1045,8 @@ class FibsemBitmapSettings(FibsemPatternSettings):
             # Convert bitmap image to bitmap points - simpler if it's handled here and consistent after
             from fibsem.milling.patterning.utils import bitmap_image_to_points
             array = bitmap_image_to_points(array)
+        else:
+            array = array.copy()
 
         self.bitmap = array
 
