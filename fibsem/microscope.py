@@ -2510,38 +2510,11 @@ class ThermoMicroscope(FibsemMicroscope):
         logging.debug({"msg": "draw_circle", "pattern_settings": pattern_settings.to_dict()})
         self._patterns.append(pattern)
         return pattern
-    
-    @staticmethod
-    def _bitmap_to_points(
-        bitmap_image: NDArray[np.uint8],
-    ) -> NDArray[Any]:
-        points_array = np.empty((*bitmap_image.shape[:2], 2), dtype=object)
-        points_array[:, :, 0] = np.interp(bitmap_image[:, :, 2], (0, 255), (0, 1))
-        points_array[:, :, 1] = 1 - bitmap_image[:, :, 1]
-        return points_array
 
     def draw_bitmap_pattern(self, pattern_settings: FibsemBitmapSettings):
-        # Get bitmap from pattern settings (from file or array)
-        bitmap = pattern_settings.bitmap
-        if isinstance(bitmap, np.ndarray):
-            bitmap_pattern = BitmapPatternDefinition()
-            if bitmap.dtype == np.uint8:
-                logging.debug("Converting bitmap array to points array")
-                points = ThermoMicroscope._bitmap_to_points(bitmap)
-            else:
-                # Assume bitmap is already a point array
-                points = bitmap
-            logging.debug("Creating bitmap pattern from array")
-            bitmap_pattern.points = points
-        elif pattern_settings.path is not None:
-            logging.debug(
-                "Creating bitmap pattern from '%s'", str(pattern_settings.path)
-            )
-            bitmap_pattern = BitmapPatternDefinition.load(pattern_settings.path)
-        else:
-            raise ValueError(
-                "Unable to draw bitmap pattern from FibsemBitmapSettings as bitmap and path are both None"
-            )
+        # Get bitmap from pattern settings
+        bitmap_pattern = BitmapPatternDefinition()
+        bitmap_pattern.points = pattern_settings.bitmap
 
         if pattern_settings.flip_y:
             bitmap_pattern.points = np.flip(bitmap_pattern.points, axis=0)
@@ -2556,7 +2529,7 @@ class ThermoMicroscope(FibsemMicroscope):
         )
 
         if not np.isclose(pattern_settings.time, 0.0):
-            logging.debug(f"Setting pattern time to {pattern_settings.time}.")
+            logging.debug("Setting pattern time to %f", pattern_settings.time)
             pattern.time = pattern_settings.time
 
         # set pattern rotation
@@ -2572,21 +2545,31 @@ class ThermoMicroscope(FibsemMicroscope):
             pattern.scan_direction = pattern_settings.scan_direction
         else:
             pattern.scan_direction = "TopToBottom"
-            logging.warning(f"Scan direction {pattern_settings.scan_direction} not supported. Using TopToBottom instead.")
-            logging.warning(f"Supported scan directions are: {available_scan_directions}")
+            logging.warning(
+                "Scan direction %s not supported. Using TopToBottom instead.", pattern_settings.scan_direction
+            )
+            logging.warning(
+                "Supported scan directions are: %s", str(available_scan_directions)
+            )
 
         # set passes
-        if pattern_settings.passes: # not zero
-            pattern.dwell_time = pattern.dwell_time * (pattern.pass_count / pattern_settings.passes)
+        if pattern_settings.passes:  # not zero
+            pattern.dwell_time = pattern.dwell_time * (
+                pattern.pass_count / pattern_settings.passes
+            )
 
             # NB: passes, time, dwell time are all interlinked, therefore can only adjust passes indirectly
             # if we adjust passes directly, it just reduces the total time to compensate, rather than increasing the dwell_time
             # NB: the current must be set before doing this, otherwise it will be out of range
 
-        logging.debug({"msg": "draw_bitmap_pattern", "pattern_settings": pattern_settings.to_dict()})
+        logging.debug(
+            {
+                "msg": "draw_bitmap_pattern",
+                "pattern_settings": pattern_settings.to_dict(),
+            }
+        )
         self._patterns.append(pattern)
         return pattern
-
 
     def get_gis(self, port: str = None):
         use_multichem = self.is_available("gis_multichem")
