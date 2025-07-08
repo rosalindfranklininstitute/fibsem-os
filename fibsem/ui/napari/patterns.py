@@ -187,21 +187,27 @@ def convert_bitmap_pattern_to_napari_image(
     resize_x = int(pattern_settings.width / pixelsize)
     resize_y = int(pattern_settings.height / pixelsize)
 
-    
-    image_bmp = Image.open(pattern_settings.path)
+    image_bmp = Image.fromarray(pattern_settings.bitmap)
+    if pattern_settings.flip_y:
+        image_bmp = image_bmp.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
     image_resized = image_bmp.resize((resize_x, resize_y))
     image_rotated = image_resized.rotate(-pattern_settings.rotation, expand=True)
     img_array = np.array(image_rotated)
 
-    pattern_centre_x = int(icx - pattern_settings.width/pixelsize/2) # TODO: account for FIB translation 
-    pattern_centre_y = int(icy - pattern_settings.height/pixelsize/2)
+    pattern_centre_x = int(
+        round(icx - pattern_settings.width / pixelsize / 2)
+    )  # TODO: account for FIB translation
+    pattern_centre_y = int(round(icy - pattern_settings.height / pixelsize / 2))
 
-    pattern_point_x = int(pattern_centre_x + pattern_settings.centre_x / pixelsize)
-    pattern_point_y = int(pattern_centre_y - pattern_settings.centre_y / pixelsize)
+    pattern_point_x = int(
+        round(pattern_centre_x + pattern_settings.centre_x / pixelsize)
+    )
+    pattern_point_y = int(
+        round(pattern_centre_y - pattern_settings.centre_y / pixelsize)
+    )
 
-    translate_position = (pattern_point_y,pattern_point_x)
+    translate_position = (pattern_point_y, pattern_point_x)
 
-    
     return img_array, translate_position
 
 def remove_all_napari_shapes_layers(viewer: napari.Viewer, layer_type: NapariLayer = NapariShapesLayers, ignore: List[str] = []):
