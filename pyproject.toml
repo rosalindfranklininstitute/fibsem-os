@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fibsem"
-version = "0.4.1a0"
+version = "0.4.1a1"
 
 description = "a universal api for fibsem control"
 authors = [
@@ -32,7 +32,9 @@ dependencies = [
     "petname>=2.6",
     "pandas>=2.0.0",
     "pyyaml>=6.0",
-    "psygnal"
+    "psygnal",
+    "ome_types",
+    "lxml",
 ]
 
 [project.urls]

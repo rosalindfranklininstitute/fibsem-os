@@ -5,14 +5,14 @@ from typing import List, Union, Dict, Any, Tuple, Optional, Type, TypeVar, Class
 
 from fibsem.microscope import FibsemMicroscope
 from fibsem.milling.config import MILLING_SPUTTER_RATE
-from fibsem.milling.patterning.patterns2 import BasePattern, get_pattern, DEFAULT_MILLING_PATTERN
+from fibsem.milling.patterning.patterns2 import BasePattern
+from fibsem.milling.patterning import get_pattern, DEFAULT_MILLING_PATTERN
 from fibsem.structures import (
     FibsemMillingSettings,
     MillingAlignment,
     ImageSettings,
     CrossSectionPattern,
     FibsemImage,
-    FibsemImageMetadata,
 )
 
 
@@ -49,16 +49,16 @@ class MillingStrategyConfig(ABC):
 class MillingStrategy(ABC, Generic[TMillingStrategyConfig]):
     """Abstract base class for different milling strategies"""
     name: str = "Milling Strategy"
-    config_class: type[TMillingStrategyConfig]
+    config_class: Type[TMillingStrategyConfig]
 
     def __init__(self, config: Optional[TMillingStrategyConfig] = None) -> None:
         self.config: TMillingStrategyConfig = config or self.config_class()
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {"name": self.name, "config": self.config.to_dict()}
 
     @classmethod
-    def from_dict(cls: type[TMillingStrategy], d: dict[str, Any]) -> TMillingStrategy:
+    def from_dict(cls: Type[TMillingStrategy], d: Dict[str, Any]) -> TMillingStrategy:
         config = cls.config_class.from_dict(d.get("config", {}))
         return cls(config=config)
 
@@ -85,7 +85,7 @@ class FibsemMillingStage:
     num: int = 0
     milling: FibsemMillingSettings = field(default_factory=FibsemMillingSettings)
     pattern: BasePattern = field(default_factory=DEFAULT_MILLING_PATTERN)
-    patterns: List[BasePattern] = None # unused
+    patterns: Optional[List[BasePattern]] = None # unused
     strategy: MillingStrategy[Any] = field(default_factory=get_strategy)
     alignment: MillingAlignment = field(default_factory=MillingAlignment)
     imaging: ImageSettings = field(default_factory=ImageSettings) # settings for post-milling acquisition
@@ -159,7 +159,7 @@ def get_milling_stages(key: str, protocol: Dict[str, List[Dict[str, Any]]]) -> L
         stages.append(stage)
     return stages
 
-def get_protocol_from_stages(stages: List[FibsemMillingStage]) -> List[Dict[str, Any]]:
+def get_protocol_from_stages(stages: Union[FibsemMillingStage, List[FibsemMillingStage]]) -> List[Dict[str, Any]]:
     """Convert a list of milling stages to a protocol dictionary.
     Args:
         stages: the list of milling stages to convert
@@ -206,3 +206,5 @@ def estimate_total_milling_time(stages: List[FibsemMillingStage]) -> float:
     if not isinstance(stages, list):
         stages = [stages]
     return sum([estimate_milling_time(stage.pattern, stage.milling.milling_current) for stage in stages])
+
+

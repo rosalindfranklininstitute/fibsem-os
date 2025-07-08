@@ -60,9 +60,9 @@ SIMULATOR_APPLICATION_FILES =  ["Si", "Si-multipass", "Si-ccs", "autolamella", "
 SIMULATOR_BEAM_CURRENTS = {
     BeamType.ELECTRON: [1.0e-12, 3.0e-12, 10e-12, 30e-12, 0.1e-9, 0.3e-9, 1e-9, 4e-9, 15e-9, 60e-9],
     BeamType.ION: {
-        "Xenon": [1.0e-12, 3.0e-12, 10e-12, 30e-12, 0.1e-9, 0.3e-9, 1e-9, 4e-9, 15e-9, 60e-9],
+        "Xenon": [1.0e-12, 3.0e-12, 10e-12, 30e-12, 0.1e-9, 0.3e-9, 1.00005e-9, 4e-9, 15e-9, 60e-9],
         "Argon": [1.0e-12, 6.0e-12, 20e-12, 60e-12, 0.2e-9, 0.74e-9, 2.0e-9, 7.4e-9, 28.0e-9, 120.0e-9],
-        None: [1.0e-12, 3.0e-12, 20e-12, 41e-12, 90e-12, 0.2e-9, 0.4e-9, 1.0e-9, 2.0e-9, 4.0e-9, 15e-9], # None = Gallium
+        None: [1.0e-12, 3.0e-12, 20e-12, 41e-12, 90e-12, 0.2e-9, 0.4e-9, 1.000005e-9, 2.0e-9, 4.0e-9, 15e-9], # None = Gallium
     }}
 
 # hack, do this properly @patrick
@@ -140,10 +140,11 @@ class GasInjectionSystem:
 @dataclass
 class MillingSystem:
     state: MillingState = MillingState.IDLE
-    patterns: List[FibsemPatternSettings] = None
+    patterns: List[FibsemPatternSettings] = field(default_factory=list)
     patterning_mode: str = "Serial"
     default_beam_type: BeamType = BeamType.ION
     default_application_file: str = "Si"
+    application_files: List[str] = field(default_factory=lambda: SIMULATOR_APPLICATION_FILES)
 
 @dataclass
 class ImagingSystem:
@@ -283,42 +284,76 @@ class DemoMicroscope(FibsemMicroscope):
         self.imaging_system.active_view = beam_type.value
         self.imaging_system.active_device = beam_type.value
 
-    def acquire_image(self, image_settings: ImageSettings) -> FibsemImage:
-        """Acquire a single image with the given settings.
-        Args:
-            image_settings: The settings for the image acquisition.
-        Returns:
-            FibsemImage: The acquired image.
-            """
+    def acquire_image(self, image_settings: Optional[ImageSettings] = None, beam_type: Optional[BeamType] = None) -> FibsemImage:
+        """
+        Acquire a new image with the specified settings or current settings for the given beam type.
 
-        logging.info(f"acquiring new {image_settings.beam_type.name} image.")
+        Args:
+            image_settings (ImageSettings, optional): The settings for the new image. 
+                Takes precedence if both parameters are provided.
+            beam_type (BeamType, optional): The beam type to use with current settings. 
+                Used only if image_settings is not provided.
+
+        Returns:
+            FibsemImage: A new FibsemImage representing the acquired image.
+            
+        Raises:
+            ValueError: If neither image_settings nor beam_type is provided.
+            
+        Examples:
+            # Acquire with specific settings
+            settings = ImageSettings(beam_type=BeamType.ELECTRON, hfw=1e-6, resolution=(1024, 1024))
+            image = microscope.acquire_image(image_settings=settings)
+            
+            # Acquire with current settings for a specific beam type
+            image = microscope.acquire_image(beam_type=BeamType.ION)
+            
+            # If both provided, image_settings takes precedence
+            image = microscope.acquire_image(image_settings=settings, beam_type=BeamType.ION)  # Uses settings
+        """
+        
+        # Validate parameters - at least one must be provided
+        if image_settings is None and beam_type is None:
+            raise ValueError("Must provide either image_settings (to acquire with specific settings) or beam_type (to acquire with current microscope settings for that beam type).")
+        
+        # Determine which beam type and settings to use (image_settings takes precedence)
+        if image_settings is not None:
+            # Use provided image settings
+            effective_beam_type = image_settings.beam_type
+            effective_image_settings = image_settings
+        else:
+            # Use current settings for the specified beam type
+            effective_beam_type = beam_type
+            effective_image_settings = self.get_imaging_settings(beam_type=beam_type)
+
+        logging.info(f"acquiring new {effective_beam_type.name} image.")
 
         # get state for image metadata
-        microscope_state = self.get_microscope_state(beam_type=image_settings.beam_type)
+        microscope_state = self.get_microscope_state(beam_type=effective_beam_type)
 
         # construct image (random noise)
         image = FibsemImage.generate_blank_image(
-            resolution=image_settings.resolution,
-            hfw=image_settings.hfw,
+            resolution=effective_image_settings.resolution,
+            hfw=effective_image_settings.hfw,
             random=True
         )
 
         # generate the next image from the sequence iterator
         if self.use_image_sequence:
-            image.data  = self._generate_next_image(beam_type=image_settings.beam_type, 
+            image.data  = self._generate_next_image(beam_type=effective_beam_type, 
                                                     output_shape=image.data.shape, 
                                                     dtype=image.data.dtype)
 
         # add additional metadata
-        image.metadata.image_settings = image_settings
+        image.metadata.image_settings = effective_image_settings
         image.metadata.microscope_state = microscope_state
         image.metadata.system = self.system
         image.metadata.experiment = self.experiment
         image.metadata.user = self.user
         
         # crop the image data if reduced area is set
-        if image_settings.reduced_area is not None:
-            rect = image_settings.reduced_area
+        if effective_image_settings.reduced_area is not None:
+            rect = effective_image_settings.reduced_area
             width = int(rect.width * image.data.shape[1])
             height = int(rect.height * image.data.shape[0])
 
@@ -327,9 +362,10 @@ class DemoMicroscope(FibsemMicroscope):
             x1, y1 = x0 + width, y0 + height
             image.data =  image.data[y0:y1, x0:x1]
 
-        # store last image, and imaging settings
-        self.imaging_system.last_image[image_settings.beam_type] = image
-        self._last_imaging_settings = image_settings
+        # store last image, and imaging settings (only if image_settings was provided)
+        self.imaging_system.last_image[effective_beam_type] = image
+        if image_settings is not None:
+            self._last_imaging_settings = image_settings
 
         logging.debug({"msg": "acquire_image", "metadata": image.metadata.to_dict()})
 
@@ -457,7 +493,6 @@ class DemoMicroscope(FibsemMicroscope):
         # TODO: add lock
 
         self.set_channel(beam_type)
-        image_settings = self.get_imaging_settings(beam_type)
 
         try:
             while True:
@@ -465,7 +500,7 @@ class DemoMicroscope(FibsemMicroscope):
                     break
 
                 # "acquire" image
-                image = self.acquire_image(image_settings)
+                image = self.acquire_image(beam_type=beam_type)
 
                 # simulate acquisition time
                 dwell_time = image.metadata.image_settings.dwell_time
@@ -714,6 +749,18 @@ class DemoMicroscope(FibsemMicroscope):
         PATTERN_SLEEP_TIME = 5
         return PATTERN_SLEEP_TIME * len(self.milling_system.patterns)
 
+    def set_default_application_file(self, application_file: str, strict: bool = True) -> str:
+        application_file = ThermoMicroscope.get_application_file(self, application_file, strict)
+        self.milling_system.default_application_file = application_file
+        return application_file
+
+    def set_patterning_mode(self, patterning_mode: str) -> None:
+        """Set the patterning mode for milling."""
+        if patterning_mode not in ["Serial", "Parallel"]:
+            raise ValueError(f"Invalid patterning mode: {patterning_mode}. Must be 'Serial' or 'Parallel'.")
+        self.milling_system.patterning_mode = patterning_mode
+        logging.debug({"msg": "set_patterning_mode", "patterning_mode": patterning_mode})
+
     def draw_rectangle(self, pattern_settings: FibsemRectangleSettings) -> None:
         logging.debug({"msg": "draw_rectangle", "pattern_settings": pattern_settings.to_dict()})
         if pattern_settings.time != 0:
@@ -800,7 +847,7 @@ class DemoMicroscope(FibsemMicroscope):
                 plasma_gas = self.get("plasma_gas", beam_type)
                 values = SIMULATOR_BEAM_CURRENTS[beam_type][plasma_gas]
             else:
-                values = SIMULATOR_BEAM_CURRENTS[beam_type]       
+                values = SIMULATOR_BEAM_CURRENTS[beam_type]
 
         if key == "voltage":
             if beam_type is BeamType.ELECTRON:
@@ -811,7 +858,7 @@ class DemoMicroscope(FibsemMicroscope):
                 # FIB: [500, 1000, 2000, 8000, 1600, 30000]
 
         if key == "application_file":
-            values = SIMULATOR_APPLICATION_FILES
+            values = self.milling_system.application_files
 
         if key == "detector_type":
             values = ["ETD", "TLD", "EDS"]

@@ -18,9 +18,7 @@ from fibsem.config import METADATA_VERSION, SUPPORTED_COORDINATE_SYSTEMS
 
 try:
     sys.path.append(r"C:\Program Files\Thermo Scientific AutoScript")
-    sys.path.append(
-        r"C:\Program Files\Enthought\Python\envs\AutoScript\Lib\site-packages"
-    )
+    sys.path.append(r"C:\Program Files\Enthought\Python\envs\AutoScript\Lib\site-packages")
     sys.path.append(r"C:\Program Files\Python36\envs\AutoScript")
     sys.path.append(r"C:\Program Files\Python36\envs\AutoScript\Lib\site-packages")
     from autoscript_sdb_microscope_client.enumerations import CoordinateSystem
@@ -30,10 +28,10 @@ try:
         ManipulatorPosition,
         StagePosition,
     )
-
-    THERMO = True
+    THERMO_API_AVAILABLE = True
 except ImportError:
-    THERMO = False
+    THERMO_API_AVAILABLE = False
+    # if Thermo imports fail, we assume we are not using Thermo microscope
 
 TFibsemPatternSettings = TypeVar(
     "TFibsemPatternSettings", bound="FibsemPatternSettings"
@@ -92,7 +90,7 @@ class Point:
 
     def euclidean(self, other: "Point") -> float:
         """Calculate the euclidean distance between two points."""
-        return np.linalg.norm(self.distance(other).to_list())
+        return float(np.linalg.norm(self.distance(other).to_list()))
 
 
 # TODO: convert these to match autoscript...
@@ -150,13 +148,13 @@ class FibsemStagePosition:
         from_autoscript_position(position: StagePosition) -> None: Create a new FibsemStagePosition object from a StagePosition object that is compatible with Autoscript.
     """
 
-    name: str = None
-    x: float = None
-    y: float = None
-    z: float = None
-    r: float = None
-    t: float = None
-    coordinate_system: str = None
+    name: Optional[str] = None
+    x: Optional[float] = None
+    y: Optional[float] = None
+    z: Optional[float] = None
+    r: Optional[float] = None
+    t: Optional[float] = None
+    coordinate_system: Optional[str] = None
 
     def to_dict(self) -> dict:
         position_dict = {}
@@ -190,62 +188,76 @@ class FibsemStagePosition:
             coordinate_system=data["coordinate_system"],
         )
 
-    if THERMO:
+    def to_autoscript_position(self, compustage: bool = False) -> Union['StagePosition', 'CompustagePosition']:
+        """Converts the stage position to a StagePosition object that is compatible with Autoscript.
+        Args:
+            compustage: bool = False: Whether or not the stage is a compustage.
+        Returns:
+            StagePosition / CompuStagePosition compatible with Autoscript.        
+        Raises:
+            ImportError: If AutoScript libraries are not available.
+        """
+        if not THERMO_API_AVAILABLE:
+            raise ImportError("AutoScript libraries not available. Cannot convert to AutoScript position.")
 
-        def to_autoscript_position(self, compustage: bool = False) -> Union[StagePosition, CompustagePosition]:
-            """Converts the stage position to a StagePosition object that is compatible with Autoscript.
-            Args:
-                compustage: bool = False: Whether or not the stage is a compustage.
-            Returns:
-                StagePosition / CompuStagePosition compatible with Autoscript.        
-            """
+        # reference: SerialFIB Arctis Driver
+        # https://github.com/sklumpe/SerialFIB/blob/main/src/Arctis/ArctisDriver.py
+        if compustage:
+            stage_position = CompustagePosition(
+                x=self.x,
+                y=self.y,
+                z=self.z,
+                a=self.t,
+                coordinate_system=CoordinateSystem.SPECIMEN,
+            )               
 
-            # reference: SerialFIB Arctis Driver
-            # https://github.com/sklumpe/SerialFIB/blob/main/src/Arctis/ArctisDriver.py
-            if compustage:
-                stage_position = CompustagePosition(
-                    x=self.x,
-                    y=self.y,
-                    z=self.z,
-                    a=self.t,
-                    coordinate_system=CoordinateSystem.SPECIMEN,
-                )               
-                
-            else:
-                stage_position = StagePosition(
-                    x=self.x,
-                    y=self.y, 
-                    z=self.z,  
-                    r=self.r,
-                    t=self.t,
-                    coordinate_system=CoordinateSystem.RAW,
-                )
+        else:
+            stage_position = StagePosition(
+                x=self.x,
+                y=self.y, 
+                z=self.z,  
+                r=self.r,
+                t=self.t,
+                coordinate_system=CoordinateSystem.RAW,
+            )
+
+        return stage_position
+
+    @classmethod
+    def from_autoscript_position(cls, position: Union['StagePosition', 'CompustagePosition']) -> 'FibsemStagePosition':
+        """Creates FibsemStagePosition from AutoScript position objects.
         
-            return stage_position
-
-        @classmethod # TODO: convert this to staticmethod?
-        def from_autoscript_position(cls, position: Union[StagePosition, CompustagePosition]) -> 'FibsemStagePosition':
+        Args:
+            position: AutoScript StagePosition or CompustagePosition object
             
-            # compustage position
-            if isinstance(position, CompustagePosition):
-                return cls(
-                    x=position.x,
-                    y=position.y,
-                    z=position.z,
-                    r=0.0,
-                    t=position.a,
-                    coordinate_system=CoordinateSystem.SPECIMEN.upper(),
-                )
+        Returns:
+            FibsemStagePosition: Converted position
+            
+        Raises:
+            ImportError: If AutoScript libraries are not available.
+        """
+        if not THERMO_API_AVAILABLE:
+            raise ImportError("AutoScript libraries not available. Cannot convert from AutoScript position.")
 
-
+        # compustage position
+        if isinstance(position, CompustagePosition):
             return cls(
                 x=position.x,
-                y=position.y,  
+                y=position.y,
                 z=position.z,
-                r=position.r,
-                t=position.t,
-                coordinate_system=position.coordinate_system.upper(),
+                r=0.0,
+                t=position.a,
+                coordinate_system=CoordinateSystem.SPECIMEN.upper(),
             )
+
+        return cls(
+            x=position.x,
+            y=position.y,  
+            z=position.z,
+            r=position.r,
+            t=position.t,
+            coordinate_system=position.coordinate_system.upper(),
+        )
 
     def __add__(self, other: "FibsemStagePosition") -> "FibsemStagePosition":
         return FibsemStagePosition(
@@ -345,30 +357,53 @@ class FibsemManipulatorPosition:
             coordinate_system=data["coordinate_system"],
         )
 
-    if THERMO:
+    def to_autoscript_position(self) -> 'ManipulatorPosition':
+        """Converts the manipulator position to AutoScript ManipulatorPosition.
+        
+        Returns:
+            ManipulatorPosition: AutoScript compatible position
+            
+        Raises:
+            ImportError: If AutoScript libraries are not available.
+        """
+        if not THERMO_API_AVAILABLE:
+            raise ImportError("AutoScript libraries not available. Cannot convert to AutoScript position.")
+            
+        if self.coordinate_system == "RAW":
+            coordinate_system = "Raw"
+        elif self.coordinate_system == "STAGE":
+            coordinate_system = "Stage"
+        return ManipulatorPosition(
+            x=self.x,
+            y=self.y,
+            z=self.z,
+            r=None,  # TODO figure this out, do we need it for real micrscope or just simulator ?
+            # r=None,
+            coordinate_system=coordinate_system,
+        )
 
-        def to_autoscript_position(self) -> ManipulatorPosition:
-            if self.coordinate_system == "RAW":
-                coordinate_system = "Raw"
-            elif self.coordinate_system == "STAGE":
-                coordinate_system = "Stage"
-            return ManipulatorPosition(
-                x=self.x,
-                y=self.y,
-                z=self.z,
-                r=None,  # TODO figure this out, do we need it for real micrscope or just simulator ?
-                # r=None,
-                coordinate_system=coordinate_system,
-            )
-
-        @classmethod
-        def from_autoscript_position(cls, position: ManipulatorPosition) -> None:
-            return cls(
-                x=position.x,
-                y=position.y,
-                z=position.z,
-                coordinate_system=position.coordinate_system.upper(),
-            )
+    @classmethod
+    def from_autoscript_position(cls, position: 'ManipulatorPosition') -> 'FibsemManipulatorPosition':
+        """Creates FibsemManipulatorPosition from AutoScript ManipulatorPosition.
+        
+        Args:
+            position: AutoScript ManipulatorPosition object
+            
+        Returns:
+            FibsemManipulatorPosition: Converted position
+            
+        Raises:
+            ImportError: If AutoScript libraries are not available.
+        """
+        if not THERMO_API_AVAILABLE:
+            raise ImportError("AutoScript libraries not available. Cannot convert from AutoScript position.")
+            
+        return cls(
+            x=position.x,
+            y=position.y,
+            z=position.z,
+            coordinate_system=position.coordinate_system.upper(),
+        )
 
     def __add__(
         self, other: "FibsemManipulatorPosition"
@@ -406,7 +441,8 @@ class FibsemRectangle:
             self.height, int
         ), f"type {type(self.height)} is unsupported for height, must be int or floar"
 
-    def from_dict(settings: dict) -> "FibsemRectangle":
+    @classmethod
+    def from_dict(cls, settings: dict) -> "FibsemRectangle":
         if settings is None:
             return None
         points = ["left", "top", "width", "height"]
@@ -451,7 +487,6 @@ def _is_valid_reduced_area(reduced_area: FibsemRectangle) -> bool:
     return True                           
 
 
-
 @dataclass
 class ImageSettings:
     """A data class representing the settings for an image acquisition.
@@ -475,19 +510,19 @@ class ImageSettings:
             Converts the ImageSettings object to a dictionary of image settings.
     """
 
-    resolution: list = None
-    dwell_time: float = None
-    hfw: float = None
-    autocontrast: bool = None
-    beam_type: BeamType = None
-    save: bool = None
-    filename: str = None
-    autogamma: bool = None
-    path: Path = None
-    reduced_area: FibsemRectangle = None
-    line_integration: int = None  # (int32) 2 - 255
-    scan_interlacing: int = None  # (int32) 2 - 8
-    frame_integration: int = None  # (int32) 2 - 512
+    resolution: Tuple[int, int] = (1536, 1024)
+    dwell_time: float = 1e-6
+    hfw: float = 150e-6
+    autocontrast: bool = False
+    beam_type: BeamType = BeamType.ELECTRON
+    save: bool = False
+    filename: str = "default_image"
+    autogamma: bool = False
+    path: Optional[Union[Path, str]] = None
+    reduced_area: Optional[FibsemRectangle] = None
+    line_integration: Optional[int] = None  # (int32) 2 - 255
+    scan_interlacing: Optional[int] = None  # (int32) 2 - 8
+    frame_integration: Optional[int] = None  # (int32) 2 - 512
     drift_correction: bool = False  # (bool) # requires frame_integration > 1
 
     def __post_init__(self):
@@ -604,6 +639,40 @@ class ImageSettings:
 
         return image_settings
 
+    @staticmethod
+    def fromAdornedImage(image: 'AdornedImage', beam_type: BeamType = BeamType.ELECTRON
+    ) -> 'ImageSettings':
+        """Creates ImageSettings from AutoScript AdornedImage.
+        
+        Args:
+            image: AutoScript AdornedImage object
+            beam_type: Beam type for the image settings
+            
+        Returns:
+            ImageSettings: Converted image settings
+            
+        Raises:
+            ImportError: If AutoScript libraries are not available.
+        """
+        if not THERMO_API_AVAILABLE:
+            raise ImportError("AutoScript libraries not available. Cannot convert from AdornedImage.")
+            
+        from fibsem.utils import current_timestamp
+
+        image_settings = ImageSettings(
+            resolution=(image.width, image.height),
+            dwell_time=image.metadata.scan_settings.dwell_time,
+            hfw=image.width * image.metadata.binary_result.pixel_size.x,
+            autocontrast=True,
+            beam_type=beam_type,
+            autogamma=True,
+            save=False,
+            path="path",
+            filename=current_timestamp(),
+            reduced_area=None,
+        )
+        return image_settings
+
 
 @dataclass
 class BeamSettings:
@@ -627,16 +696,16 @@ class BeamSettings:
     """
 
     beam_type: BeamType
-    working_distance: float = None
-    beam_current: float = None
-    voltage: float = None
-    hfw: float = None
-    resolution: list = None
-    dwell_time: float = None
-    stigmation: Point = None
-    shift: Point = None
-    scan_rotation: float = None
-    preset: str = None
+    working_distance: Optional[float] = None
+    beam_current: Optional[float] = None
+    voltage: Optional[float] = None
+    hfw: Optional[float] = None
+    resolution: Optional[Tuple[int, int]] = None
+    dwell_time: Optional[float] = None
+    stigmation: Optional[Point] = None
+    shift: Optional[Point] = None
+    scan_rotation: Optional[float] = None
+    preset: Optional[str] = None
 
     def __post_init__(self):
         assert (
@@ -704,7 +773,7 @@ class BeamSettings:
             shift = Point.from_dict(state_dict["shift"])
         else:
             shift = Point()
-        
+
         wd = state_dict.get("working_distance", state_dict.get("eucentric_height", None))
         current = state_dict.get("beam_current", state_dict.get("current", None))
 
@@ -785,11 +854,11 @@ class MicroscopeState:
     """
 
     timestamp: float = datetime.timestamp(datetime.now())
-    stage_position: FibsemStagePosition = field(default_factory=FibsemStagePosition)
-    electron_beam: BeamSettings = field(default_factory=lambda: BeamSettings(beam_type=BeamType.ELECTRON))
-    ion_beam: BeamSettings = field(default_factory=lambda: BeamSettings(beam_type=BeamType.ION))
-    electron_detector: FibsemDetectorSettings = field(default_factory=FibsemDetectorSettings)
-    ion_detector: FibsemDetectorSettings = field(default_factory=FibsemDetectorSettings)
+    stage_position: Optional[FibsemStagePosition] = field(default_factory=FibsemStagePosition)
+    electron_beam: Optional[BeamSettings] = field(default_factory=lambda: BeamSettings(beam_type=BeamType.ELECTRON))
+    ion_beam: Optional[BeamSettings] = field(default_factory=lambda: BeamSettings(beam_type=BeamType.ION))
+    electron_detector: Optional[FibsemDetectorSettings] = field(default_factory=FibsemDetectorSettings)
+    ion_detector: Optional[FibsemDetectorSettings] = field(default_factory=FibsemDetectorSettings)
 
     def __post_init__(self):
         assert (
@@ -861,7 +930,6 @@ class MicroscopeState:
         )
 
         return microscope_state
-
 
 
 ########### Base Pattern Settings
@@ -1126,7 +1194,7 @@ class BeamSystemSettings:
     eucentric_height: float
     column_tilt: float
     plasma: bool = False
-    plasma_gas: str = None
+    plasma_gas: Optional[str] = None
 
     def to_dict(self):
         ddict = {
@@ -1139,7 +1207,7 @@ class BeamSystemSettings:
         }
         ddict.update(self.beam.to_dict())
         ddict.update(self.detector.to_dict())
-        
+
         # rename keys to match config
         ddict["detector_mode"] = ddict.pop("mode")
         ddict["detector_type"] = ddict.pop("type")
@@ -1148,7 +1216,7 @@ class BeamSystemSettings:
         ddict["current"] = ddict.pop("beam_current")
 
         return ddict
-    
+
     @staticmethod
     def from_dict(settings: dict) -> 'BeamSystemSettings':
         return BeamSystemSettings(
@@ -1218,8 +1286,8 @@ class SystemInfo:
     hardware_version: str
     software_version: str
     fibsem_version: str = fibsem.__version__
-    application: str = None
-    application_version: str = None
+    application: Optional[str] = None
+    application_version: Optional[str] = None
 
     def to_dict(self):
         return {
@@ -1234,7 +1302,7 @@ class SystemInfo:
             "application": self.application,
             "application_version": self.application_version,
         }
-    
+
     @staticmethod
     def from_dict(settings: dict):
         return SystemInfo(
@@ -1247,7 +1315,7 @@ class SystemInfo:
             software_version=settings.get("software_version", "Unknown"),
             fibsem_version=settings.get("fibsem_version", fibsem.__version__),
             application=settings.get("application", None),
-            application_version=settings.get("application_version", None),  
+            application_version=settings.get("application_version", None),
         )
 
 @dataclass
@@ -1258,7 +1326,7 @@ class SystemSettings:
     manipulator: ManipulatorSystemSettings
     gis: GISSystemSettings
     info: SystemInfo
-    sim: Dict[str, Union[str, bool]] = field(default_factory=dict) 
+    sim: Dict[str, Union[str, bool]] = field(default_factory=dict)
 
     def to_dict(self):
         return {
@@ -1270,14 +1338,14 @@ class SystemSettings:
             "info": self.info.to_dict(),
             "sim": self.sim,
         }
-    
+
     @staticmethod
     def from_dict(settings: dict):
 
         # TODO: remove this once the settings are updated
         settings["electron"]["beam_type"] = BeamType.ELECTRON.name
         settings["ion"]["beam_type"] = BeamType.ION.name
-            
+
         return SystemSettings(
             stage=StageSystemSettings.from_dict(settings["stage"]),
             electron=BeamSystemSettings.from_dict(settings["electron"]),
@@ -1287,6 +1355,7 @@ class SystemSettings:
             info=SystemInfo.from_dict(settings["info"]),
             sim=settings.get("sim", {}),
         )
+
 
 @dataclass
 class MicroscopeSettings:
@@ -1308,7 +1377,7 @@ class MicroscopeSettings:
     system: SystemSettings
     image: ImageSettings
     milling: FibsemMillingSettings
-    protocol: dict = None
+    protocol: Optional[dict] = None
 
     def to_dict(self) -> dict:
         settings_dict = {
@@ -1322,12 +1391,12 @@ class MicroscopeSettings:
 
     @staticmethod
     def from_dict(
-        settings: dict, protocol: dict = None
+        settings: dict, protocol: Optional[dict] = None
     ) -> "MicroscopeSettings":
-        
+
         if protocol is None:
             protocol = settings.get("protocol", {"name": "demo"})
-     
+
         return MicroscopeSettings(
             system=SystemSettings.from_dict(settings),
             image=ImageSettings.from_dict(settings["imaging"]),
@@ -1336,17 +1405,14 @@ class MicroscopeSettings:
         )
 
 
-
-
-
 @dataclass
 class FibsemExperiment:
-    id: str = None
-    method: str = None
+    id: Optional[str] = None
+    method: Optional[str] = None
     date: float = datetime.timestamp(datetime.now())
     application: str = "OpenFIBSEM"
     fibsem_version: str = fibsem.__version__
-    application_version: str = None
+    application_version: Optional[str] = None
 
     def to_dict(self) -> dict:
         """Converts to a dictionary."""
@@ -1374,10 +1440,10 @@ class FibsemExperiment:
 
 @dataclass
 class FibsemUser:
-    name: str = None
-    email: str = None
-    organization: str = None
-    hostname: str = None
+    name: Optional[str] = None
+    email: Optional[str] = None
+    organization: Optional[str] = None
+    hostname: Optional[str] = None
     # TODO: add host_ip_address
 
     def to_dict(self) -> dict:
@@ -1411,9 +1477,9 @@ class FibsemUser:
             hostname = socket.gethostname()
         else:
             hostname = "hostname"
-            
+
         user = FibsemUser(name=username, email="null", organization="null", hostname=hostname)
-        
+
         return user
 
 
@@ -1424,15 +1490,15 @@ class FibsemImageMetadata:
     image_settings: ImageSettings
     pixel_size: Point
     microscope_state: MicroscopeState
-    system: SystemSettings = None
+    system: Optional[SystemSettings] = None
     version: str = METADATA_VERSION
-    user: FibsemUser = field(default_factory=FibsemUser)
-    experiment: FibsemExperiment = field(default_factory=FibsemExperiment)
+    user: FibsemUser = field(default_factory=lambda: FibsemUser())
+    experiment: FibsemExperiment = field(default_factory=lambda: FibsemExperiment())
 
     @property
     def beam_type(self) -> BeamType:
         return self.image_settings.beam_type
-    
+
     @property
     def stage_position(self) -> FibsemStagePosition:
         return self.microscope_state.stage_position
@@ -1459,7 +1525,7 @@ class FibsemImageMetadata:
         return settings_dict
 
     @staticmethod
-    def from_dict(settings: dict) -> "ImageSettings":
+    def from_dict(settings: dict) -> "FibsemImageMetadata":
         """Converts a dictionary to metadata."""
 
         image_settings = ImageSettings.from_dict(settings["image"])
@@ -1488,26 +1554,7 @@ class FibsemImageMetadata:
         )
         return metadata
 
-    if THERMO:
-        # TODO: move to ImageSettings
-        def image_settings_from_adorned(
-            image=AdornedImage, beam_type: BeamType = BeamType.ELECTRON
-        ) -> ImageSettings:
-            from fibsem.utils import current_timestamp
 
-            image_settings = ImageSettings(
-                resolution=[image.width, image.height],
-                dwell_time=image.metadata.scan_settings.dwell_time,
-                hfw=image.width * image.metadata.binary_result.pixel_size.x,
-                autocontrast=True,
-                beam_type=beam_type,
-                autogamma=True,
-                save=False,
-                path="path",
-                filename=current_timestamp(),
-                reduced_area=None,
-            )
-            return image_settings
 
     def compare_image_settings(self, image_settings: ImageSettings) -> bool:
         """Compares image settings to the metadata image settings.
@@ -1580,7 +1627,7 @@ class FibsemImage:
                 path (path): path to save directory and filename
     """
 
-    def __init__(self, data: np.ndarray, metadata: FibsemImageMetadata = None):
+    def __init__(self, data: np.ndarray, metadata: Optional[FibsemImageMetadata] = None):
         if check_data_format(data):
             if data.ndim == 3 and data.shape[2] == 1:
                 data = data[:, :, 0]
@@ -1616,17 +1663,23 @@ class FibsemImage:
                 # traceback.print_exc()
         return cls(data=data, metadata=metadata)
 
-    def save(self, path: Path = None) -> None:
+    def save(self, path: Optional[Union[Path, str]] = None) -> None:
         """Saves a FibsemImage to a tiff file.
 
         Inputs:
             path (path): path to save directory and filename
         """
+        
         if path is None:
-            path = os.path.join(
-                self.metadata.image_settings.path,
-                self.metadata.image_settings.filename,
-            )
+            if self.metadata is None:
+                raise ValueError("No metadata provided, cannot determine save path. Please provide a path.")
+            filename = self.metadata.image_settings.filename
+            path = self.metadata.image_settings.path
+            if filename is None:
+                raise ValueError("No filename provided in metadata, cannot determine save path. Please provide a path.")
+            if path is None:
+                raise ValueError("No path provided in metadata, cannot determine save path. Please provide a path.")
+            path = os.path.join(path, filename)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         path = Path(path).with_suffix(".tif")
 
@@ -1760,59 +1813,81 @@ class FibsemImage:
         with tff.TiffFile(path) as tif:
             data = tif.pages[0].asarray()
         return cls(data=data, metadata=md)
-    
+
     ### EXPERIMENTAL END ####
 
-    if THERMO:
+    @classmethod
+    def fromAdornedImage(
+        cls,
+        adorned: 'AdornedImage',
+        image_settings: Optional[ImageSettings] = None,
+        state: Optional[MicroscopeState] = None,
+        beam_type: BeamType = BeamType.ELECTRON,
+    ) -> "FibsemImage":
+        """Creates FibsemImage from an AdornedImage (microscope output format).
 
-        @classmethod
-        def fromAdornedImage(
-            cls,
-            adorned: AdornedImage,
-            image_settings: ImageSettings,
-            state: MicroscopeState = None,
-        ) -> "FibsemImage":
-            """Creates FibsemImage from an AdornedImage (microscope output format).
+        Args:
+            adorned (AdornedImage): Adorned Image from microscope
+            image_settings (ImageSettings, optional): Image settings. Defaults to None.
+            state (MicroscopeState, optional): Microscope state. Defaults to None.
+            beam_type (BeamType): Beam type for the image. Defaults to BeamType.ELECTRON.
 
-            Args:
-                adorned (AdornedImage): Adorned Image from microscope
-                metadata (FibsemImageMetadata, optional): metadata extracted from microscope output. Defaults to None.
+        Returns:
+            FibsemImage: instance of FibsemImage from AdornedImage
+            
+        Raises:
+            ImportError: If AutoScript libraries are not available.
+        """
+        if not THERMO_API_AVAILABLE:
+            raise ImportError("AutoScript libraries not available. Cannot convert from AdornedImage.")
+        
+        if state is None:
+            state = MicroscopeState(
+                timestamp=adorned.metadata.acquisition.acquisition_datetime,
+                stage_position=FibsemStagePosition(
+                    adorned.metadata.stage_settings.stage_position.x,
+                    adorned.metadata.stage_settings.stage_position.y,
+                    adorned.metadata.stage_settings.stage_position.z,
+                    adorned.metadata.stage_settings.stage_position.r,
+                    adorned.metadata.stage_settings.stage_position.t,
+                ),
+                electron_beam=BeamSettings(beam_type=BeamType.ELECTRON),
+                ion_beam=BeamSettings(beam_type=BeamType.ION),
+            )
+        else:
+            state.timestamp = adorned.metadata.acquisition.acquisition_datetime
 
-            Returns:
-                FibsemImage: instance of FibsemImage from AdornedImage
-            """
-            if state is None:
-                state = MicroscopeState(
-                    timestamp=adorned.metadata.acquisition.acquisition_datetime,
-                    stage_position=FibsemStagePosition(
-                        adorned.metadata.stage_settings.stage_position.x,
-                        adorned.metadata.stage_settings.stage_position.y,
-                        adorned.metadata.stage_settings.stage_position.z,
-                        adorned.metadata.stage_settings.stage_position.r,
-                        adorned.metadata.stage_settings.stage_position.t,
-                    ),
-                    electron_beam=BeamSettings(beam_type=BeamType.ELECTRON),
-                    ion_beam=BeamSettings(beam_type=BeamType.ION),
-                )
-            else:
-                state.timestamp = adorned.metadata.acquisition.acquisition_datetime
+        if image_settings is None:
+            from fibsem.utils import current_timestamp
 
-            pixel_size = Point(
-                adorned.metadata.binary_result.pixel_size.x,
-                adorned.metadata.binary_result.pixel_size.y,
+            image_settings = ImageSettings(
+                resolution=(adorned.width, adorned.height),
+                dwell_time=adorned.metadata.scan_settings.dwell_time,
+                hfw=adorned.width * adorned.metadata.binary_result.pixel_size.x,
+                autocontrast=True,
+                beam_type=beam_type,
+                autogamma=True,
+                save=False,
+                path="path",
+                filename=current_timestamp(),
+                reduced_area=None,
             )
 
-            metadata = FibsemImageMetadata(
-                image_settings=image_settings,
-                pixel_size=pixel_size,
-                microscope_state=state,
-            )
-            return cls(data=adorned.data, metadata=metadata)
+        pixel_size = Point(
+            adorned.metadata.binary_result.pixel_size.x,
+            adorned.metadata.binary_result.pixel_size.y,
+        )
 
+        metadata = FibsemImageMetadata(
+            image_settings=image_settings,
+            pixel_size=pixel_size,
+            microscope_state=state,
+        )
+        return cls(data=adorned.data, metadata=metadata)
 
     @staticmethod
     def generate_blank_image(
-        resolution: List[int] = [1536, 1024],
+        resolution: Tuple[int, int] = (1536, 1024),
         hfw: float = 100e-6,
         pixel_size: Optional[Point] = None,
         random: bool = False,
@@ -1863,48 +1938,6 @@ class ReferenceImages:
         yield self.low_res_eb, self.high_res_eb, self.low_res_ib, self.high_res_ib
 
 
-class ThermoGISLine:
-    def __init__(self, line=None, name=None, status: str = "Retracted"):
-        self.line = line
-        self.name = name
-        self.status = status
-        self.temp_ready = False
-
-    def insert(self):
-        if self.line is not None:
-            self.line.insert()
-        self.status = "Inserted"
-
-    def retract(self):
-        if self.line is not None:
-            self.line.retract()
-        self.status = "Retracted"
-
-
-class ThermoMultiChemLine:
-    def __init__(self, line=None, status: str = "Retracted"):
-        self.line = line
-        self.status = status
-        self.positions = ["Electron Default", "Ion Default", "Retract"]
-        self.current_position = "Retract"
-        self.temp_ready = False
-
-    def insert(self, position):
-        # position_str = getattr(MultiChemInsertPosition,position)
-
-        if self.line is not None:
-            self.line.insert(position)
-
-        self.current_position = position
-        self.status = "Inserted"
-
-    def retract(self):
-        if self.line is not None:
-            self.line.retract()
-
-        self.status = "Retracted"
-        self.current_position = "Retracted"
-
 
 def check_data_format(data: np.ndarray) -> bool:
     """Checks that data is in the correct format."""
@@ -1919,7 +1952,7 @@ class FibsemGasInjectionSettings:
     port: str
     gas: str
     duration: float
-    insert_position: str = None # multichem only
+    insert_position: Optional[str] = None # multichem only
 
     @staticmethod
     def from_dict(d: dict):
@@ -1929,7 +1962,7 @@ class FibsemGasInjectionSettings:
             duration=d["duration"],
             insert_position=d.get("insert_position", None),
         )
-    
+
     def to_dict(self):
         return {
             "port": self.port,
@@ -1940,9 +1973,13 @@ class FibsemGasInjectionSettings:
 
 
 def calculate_fiducial_area_v2(image: FibsemImage, fiducial_centre: Point, fiducial_length:float)->Tuple[FibsemRectangle, bool]:
+    
+    if image.metadata is None or image.metadata.pixel_size is None:
+        raise ValueError("Image metadata or pixel size is not set.")
+    
     from fibsem import conversions
     pixelsize = image.metadata.pixel_size.x
-    
+
     fiducial_centre.y = -fiducial_centre.y
     fiducial_centre_px = conversions.convert_point_from_metres_to_pixel(
         fiducial_centre, pixelsize
@@ -1986,7 +2023,7 @@ class MillingAlignment:
                 "interval_enabled": self.interval_enabled, 
                 "interval": self.interval, 
                 "rect": self.rect.to_dict()}
-    
+
     @staticmethod
     def from_dict(d: dict) -> "MillingAlignment":
         return MillingAlignment(
