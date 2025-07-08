@@ -101,11 +101,15 @@ class BitmapPattern(BasePattern[FibsemBitmapSettings]):
 
     name: ClassVar[str] = "Bitmap"
 
-    def __post_init__(self):
-        if self.array is None and not self.path.strip():
-            raise AttributeError("BitmapPattern requires array or path to be set")
-
     def define(self) -> List[FibsemBitmapSettings]:
+        path: Optional[str] = self.path.strip()
+        if not path:
+            path = None
+        array = self.array
+
+        if array is None and path is None:
+            raise AttributeError("BitmapPattern requires bitmap or path must be set")
+
         shape = FibsemBitmapSettings(
             width=self.width,
             height=self.height,
@@ -116,9 +120,9 @@ class BitmapPattern(BasePattern[FibsemBitmapSettings]):
             scan_direction=self.scan_direction,
             passes=self.passes,
             time=self.time,
-            path=self.path,
-            array=self.array,
-            )
+            path=path,
+            array=array,
+        )
         self.shapes = [shape]
         return self.shapes
 
@@ -140,25 +144,30 @@ class TrenchBitmapPattern(BasePattern[FibsemBitmapSettings]):
 
     name: ClassVar[str] = "TrenchBitmap"
 
-    def __post_init__(self):
-        if self.array is None and not self.path.strip():
-            raise AttributeError("BitmapPattern requires bitmap or path must be set")
-
     def define(self) -> list[FibsemBitmapSettings]:
         path: Optional[str] = self.path.strip()
         if not path:
             path = None
         array = self.array
 
+        if array is None and path is None:
+            raise AttributeError(
+                "TrenchBitmapPattern requires bitmap or path must be set"
+            )
+
         # calculate the centre of the upper and lower trench
-        centre_lower_y = self.point.y - (self.spacing / 2 + self.lower_trench_height / 2)
-        centre_upper_y = self.point.y + (self.spacing / 2 + self.upper_trench_height / 2)
+        centre_lower_y = self.point.y - (
+            self.spacing / 2 + self.lower_trench_height / 2
+        )
+        centre_upper_y = self.point.y + (
+            self.spacing / 2 + self.upper_trench_height / 2
+        )
 
         flip_lower_y = False
         if self.array_lower is None:
             array_lower = None
             if not self.path_lower.strip():
-                path_lower=None
+                path_lower = None
                 # Fallback on upper bitmap/path
                 flip_lower_y = True
                 path_lower = path
@@ -177,7 +186,6 @@ class TrenchBitmapPattern(BasePattern[FibsemBitmapSettings]):
             flip_y=flip_lower_y,
             path=path_lower,
             array=array_lower,
-
         )
 
         upper_pattern_settings = FibsemBitmapSettings(
