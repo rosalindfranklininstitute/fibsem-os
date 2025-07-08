@@ -59,14 +59,14 @@ OVERLAP_PROPERTIES = {
 
 def _rect_pattern_to_image_pixels(
     pattern: FibsemRectangleSettings, pixel_size: float, image_shape: Tuple[int, int]
-) -> Tuple[int, int, int, int]:
+) -> Tuple[float, float, float, float]:
     """Convert rectangle pattern to image pixel coordinates.
     Args:
         pattern: FibsemRectangleSettings: Rectangle pattern to convert.
         pixel_size: float: Pixel size of the image.
         image_shape: Tuple[int, int]: Shape of the image.
     Returns:
-        Tuple[int, int, int, int]: Parameters (center_x, center_y, width, height) in image pixel coordinates.
+        Tuple[float, float, float, float]: Parameters (center_x, center_y, width, height) in image pixel coordinates.
     """
     # get pattern parameters
     width = pattern.width
@@ -89,14 +89,14 @@ def _rect_pattern_to_image_pixels(
 
 def _circle_pattern_to_image_pixels(
     pattern: FibsemCircleSettings, pixel_size: float, image_shape: Tuple[int, int]
-) -> Tuple[int, int, float, float, float, float]:
+) -> Tuple[float, float, float, float, float, float]:
     """Convert circle pattern to image pixel coordinates.
     Args:
         pattern: FibsemCircleSettings: Circle pattern to convert.
         pixel_size: float: Pixel size of the image.
         image_shape: Tuple[int, int]: Shape of the image.
     Returns:
-        Tuple[int, int, float, float, float, float]: Parameters (center_x, center_y, radius, inner_radius, start_angle, end_angle) in image pixel coordinates.
+        Tuple[float, float, float, float, float, float]: Parameters (center_x, center_y, radius, inner_radius, start_angle, end_angle) in image pixel coordinates.
     """
     # get pattern parameters
     radius = pattern.radius
@@ -121,7 +121,7 @@ def _circle_pattern_to_image_pixels(
 
 def _line_pattern_to_image_pixels(
     pattern: FibsemLineSettings, pixel_size: float, image_shape: Tuple[int, int]
-) -> Tuple[int, int, int, int]:
+) -> Tuple[float, float, float, float]:
     """Convert line pattern to image pixel coordinates.
     Args:
         pattern: FibsemLineSettings: Line pattern to convert.
@@ -139,7 +139,7 @@ def _line_pattern_to_image_pixels(
     end_px, end_py = end_x / pixel_size, end_y / pixel_size
 
     # convert to image coordinates
-    cy, cx = image_shape[0] // 2, image_shape[1] // 2
+    cy, cx = image_shape[0] / 2, image_shape[1] / 2
     start_pixel_x = cx + start_px
     start_pixel_y = cy - start_py
     end_pixel_x = cx + end_px
