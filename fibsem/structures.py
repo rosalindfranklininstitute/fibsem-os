@@ -1031,28 +1031,35 @@ class FibsemBitmapSettings(FibsemPatternSettings):
     flip_y: bool = False
     path: InitVar[Optional[Union[str, os.PathLike]]] = None
     array: InitVar[Optional[NDArray[Any]]] = None
-    bitmap: NDArray[Any] = field(init=False)
+    bitmap: Optional[NDArray[Any]] = field(init=False)
 
-    def __post_init__(self, path: Optional[Union[str, os.PathLike]], array: Optional[NDArray[Any]]) -> None:
+    def __post_init__(
+        self, path: Optional[Union[str, os.PathLike]], array: Optional[NDArray[Any]]
+    ) -> None:
         if array is None:
             if path is None:
                 # Fallback on empty array
-                array = np.zeros((1, 1, 2), dtype=float)
+                array = None
             else:
                 from PIL import Image
+
                 array = np.asarray(Image.open(path), dtype=np.uint8)
-        
-        if array.dtype == np.uint8:
-            # Convert bitmap image to bitmap points - simpler if it's handled here and consistent after
-            from fibsem.milling.patterning.utils import bitmap_image_to_points
-            array = bitmap_image_to_points(array)
-        else:
-            array = array.copy()
+
+        if array is not None:
+            if array.dtype == np.uint8:
+                # Convert bitmap image to bitmap points - simpler if it's handled here and consistent after
+                from fibsem.milling.patterning.utils import bitmap_image_to_points
+
+                array = bitmap_image_to_points(array)
+            else:
+                array = array.copy()
 
         self.bitmap = array
 
     @property
     def volume(self) -> float:
+        if self.bitmap is None:
+            return 0
         return self.width * self.height * self.depth * self.bitmap[:, :, 0].mean()
 
 

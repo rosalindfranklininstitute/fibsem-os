@@ -180,23 +180,26 @@ def create_crosshair_shape(centre_point: Point,
 
 
 def convert_bitmap_pattern_to_napari_image(
-        pattern_settings: FibsemBitmapSettings, shape: Tuple[int, int], pixelsize: float) -> np.ndarray:
-
+    pattern_settings: FibsemBitmapSettings, shape: Tuple[int, int], pixelsize: float
+) -> Tuple[np.ndarray, Tuple[int, int]]:
     icy, icx = get_image_pixel_centre(shape)
 
     resize_x = int(pattern_settings.width / pixelsize)
     resize_y = int(pattern_settings.height / pixelsize)
 
-    image_bmp = Image.fromarray(pattern_settings.bitmap)
-    if pattern_settings.flip_y:
-        image_bmp = image_bmp.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
-    image_resized = image_bmp.resize((resize_x, resize_y))
-    image_rotated = image_resized.rotate(-pattern_settings.rotation, expand=True)
-    img_array = np.array(image_rotated)
+    if pattern_settings.bitmap is None:
+        image_bmp = Image.fromarray(np.zeros((resize_x, resize_y), dtype=float))
+    else:
+        image_bmp = Image.fromarray(pattern_settings.bitmap)
+        if pattern_settings.flip_y:
+            image_bmp = image_bmp.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+        image_bmp = image_bmp.resize((resize_x, resize_y))
 
-    pattern_centre_x = int(
-        round(icx - pattern_settings.width / pixelsize / 2)
-    )  # TODO: account for FIB translation
+    image_bmp = image_bmp.rotate(-pattern_settings.rotation, expand=True)
+    img_array = np.asarray(image_bmp)
+
+    # TODO: account for FIB translation
+    pattern_centre_x = int(round(icx - pattern_settings.width / pixelsize / 2))
     pattern_centre_y = int(round(icy - pattern_settings.height / pixelsize / 2))
 
     pattern_point_x = int(
@@ -209,6 +212,7 @@ def convert_bitmap_pattern_to_napari_image(
     translate_position = (pattern_point_y, pattern_point_x)
 
     return img_array, translate_position
+
 
 def remove_all_napari_shapes_layers(viewer: napari.Viewer, layer_type: NapariLayer = NapariShapesLayers, ignore: List[str] = []):
     """Remove all shapes layers from the napari viewer, excluding a specified list."""

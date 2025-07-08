@@ -265,6 +265,10 @@ def _create_bitmap_patches(
     )
 
     bitmap = shape.bitmap
+
+    if bitmap is None:
+        bitmap = np.zeros((1, 1, 2), dtype=float)
+
     if shape.flip_y:
         bitmap = np.flip(bitmap, axis=0)
 
@@ -712,7 +716,12 @@ def draw_bitmap_shape(
     cx = int(icx + (centre_x / pixelsize_x))  # Fix: use pixelsize_x for x coordinate
     cy = int(icy - (centre_y / pixelsize_y))
 
-    image_bmp = Image.fromarray(pattern_settings.bitmap[:, :, 0])
+    bitmap = pattern_settings.bitmap
+    
+    if bitmap is None:
+        bitmap = np.zeros((1, 1, 2), dtype=float)
+
+    image_bmp = Image.fromarray(bitmap[:, :, 0])
 
     if pattern_settings.flip_y:
         image_bmp = image_bmp.transpose(Image.Transpose.FLIP_TOP_BOTTOM)

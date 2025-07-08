@@ -2511,6 +2511,10 @@ class ThermoMicroscope(FibsemMicroscope):
         return pattern
 
     def draw_bitmap_pattern(self, pattern_settings: FibsemBitmapSettings):
+        if pattern_settings.bitmap is None:
+            logging.warning("Bitmap pattern will be skipped as no bitmap has been set")
+            return None
+
         # Get bitmap from pattern settings
         bitmap_pattern = BitmapPatternDefinition()
         bitmap_pattern.points = pattern_settings.bitmap
