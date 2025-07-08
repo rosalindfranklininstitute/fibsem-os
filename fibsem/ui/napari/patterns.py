@@ -1,7 +1,8 @@
 import logging
 import time
 from copy import deepcopy
-from typing import List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import List, Optional, Tuple, Dict
 
 import matplotlib.pyplot as plt
 import napari
@@ -229,19 +230,40 @@ def remove_all_napari_shapes_layers(viewer: napari.Viewer, layer_type: NapariLay
         viewer.layers.remove(layer)  # Not removing the second layer?
 
 
-NAPARI_DRAWING_FUNCTIONS = {
-    FibsemRectangleSettings: convert_pattern_to_napari_rect,
-    FibsemCircleSettings: convert_pattern_to_napari_circle,
-    FibsemLineSettings: convert_pattern_to_napari_line,
-    FibsemBitmapSettings: convert_bitmap_pattern_to_napari_image,
+NAPARI_DRAWING_DICT = {
+    FibsemRectangleSettings: (convert_pattern_to_napari_rect, "rectangle"),
+    FibsemCircleSettings: (convert_pattern_to_napari_circle, "ellipse"),
+    FibsemLineSettings: (convert_pattern_to_napari_line, "line"),
+    FibsemBitmapSettings: (convert_bitmap_pattern_to_napari_image, "image"),
 }
 
-NAPARI_PATTERN_LAYER_TYPES = {
-    FibsemRectangleSettings: "rectangle",
-    FibsemCircleSettings: "ellipse",
-    FibsemLineSettings: "line",
-    FibsemBitmapSettings: "image",
-}
+
+@dataclass
+class NapariShape:
+    shape: np.ndarray
+    shape_type: str
+    colour: str
+
+    @classmethod
+    def draw(
+        cls,
+        pattern_settings: FibsemPatternSettings,
+        image_shape: Tuple[int, int],
+        pixelsize: float,
+        colour: str,
+    ) -> Optional["NapariShape"]:
+        napari_drawing_fn, shape_type = NAPARI_DRAWING_DICT.get(
+            type(pattern_settings), (None, None)
+        )
+        if napari_drawing_fn is None:
+            logging.warning(f"Pattern type {type(pattern_settings)} not supported")
+            return None
+
+        shape = napari_drawing_fn(
+            pattern_settings=pattern_settings, shape=image_shape, pixelsize=pixelsize
+        )
+        return cls(shape=shape, shape_type=shape_type, colour=colour)
+
 
 def draw_milling_patterns_in_napari(
     viewer: napari.Viewer,
@@ -267,27 +289,7 @@ def draw_milling_patterns_in_napari(
     image_shape = image_layer.data.shape
     translation = image_layer.translate
 
-    # draw milling patterns as labels
-    # mask = np.zeros(image_shape, dtype=np.uint8)
-    # colormap = {0: 'black'}
-    # for i, stage in enumerate(deepcopy(milling_stages)):
-    #     m = create_pattern_mask(stage, image_shape, pixelsize, include_exclusions=True)
-    #     mask[m > 0] = i + 1
-    #     colormap[i + 1] = COLOURS[i % len(COLOURS)]
-
-    # name = "Milling Patterns"
-    # # viewer = napari.Viewer()
-    # if name in viewer.layers:
-    #     viewer.layers[name].data = mask
-    #     viewer.layers[name].colormap = colormap
-    # else:
-    #     viewer.add_labels(mask, name=name, colormap=colormap, translate=translation, blending='additive', opacity=0.9)
-
-    # return [name]
-
-    all_napari_shapes: List[np.ndarray] = []
-    all_shape_types: List[np.ndarray] = []
-    all_shape_colours: List[str] = []
+    all_napari_shapes: List[NapariShape] = []
 
     all_milling_stages = deepcopy(milling_stages)
     if background_milling_stages is not None:
@@ -296,66 +298,79 @@ def draw_milling_patterns_in_napari(
 
     # convert fibsem patterns to napari shapes
     for i, stage in enumerate(all_milling_stages):
-
         # shapes for this milling stage
-        napari_shapes: List[np.ndarray]  = []
-        shape_types: List[str] = []
+        napari_shapes: List[NapariShape] = []
+
+        is_background = i >= n_milling_stages
+        if is_background:
+            napari_layer_colour = "black"
+        else:
+            napari_layer_colour = COLOURS[i % len(COLOURS)]
 
         # TODO: QUERY  migrate to using label layers for everything??
         # TODO: re-enable annulus drawing, re-enable bitmaps
         for pattern_settings in stage.pattern.define():
-
-            napari_drawing_fn = NAPARI_DRAWING_FUNCTIONS.get(type(pattern_settings), None)
-            if napari_drawing_fn is None:
-                logging.warning(f"Pattern type {type(pattern_settings)} not supported")
+            shape = NapariShape.draw(
+                pattern_settings=pattern_settings,
+                image_shape=image_shape,
+                pixelsize=pixelsize,
+                colour=napari_layer_colour,
+            )
+            if shape is None:
                 continue
 
-            shape = napari_drawing_fn(pattern_settings=pattern_settings, 
-                                      shape=image_shape, 
-                                      pixelsize=pixelsize)
-            stype = NAPARI_PATTERN_LAYER_TYPES.get(type(pattern_settings), None)     
             napari_shapes.append(shape)
-            shape_types.append(stype)
 
         # draw the patterns as a shape layer
         if napari_shapes:
-
             if draw_crosshair:
-                crosshair_shapes = create_crosshair_shape(centre_point=stage.pattern.point,
-                                                          shape=image_shape,
-                                                          pixelsize=pixelsize)
-                crosshair_shape_types = ["rectangle", "rectangle"]
-                napari_shapes.extend(crosshair_shapes)
-                shape_types.extend(crosshair_shape_types)
-
-            is_background = i >= n_milling_stages
-            if is_background:
-                napari_colours = ["black"] * len(napari_shapes)
-            else:
-                napari_colours = [COLOURS[i % len(COLOURS)]] * len(napari_shapes)
+                for crosshair_shape in create_crosshair_shape(
+                    centre_point=stage.pattern.point,
+                    shape=image_shape,
+                    pixelsize=pixelsize,
+                ):
+                    napari_shapes.append(
+                        NapariShape(
+                            shape=crosshair_shape,
+                            shape_type="rectangle",
+                            colour=napari_layer_colour,
+                        )
+                    )
 
             # TODO: properties dict for all parameters
             all_napari_shapes.extend(napari_shapes)
-            all_shape_types.extend(shape_types)
-            all_shape_colours.extend(napari_colours)
 
     name = "Milling Patterns"
     if all_napari_shapes:
+        shapes_list: List[np.ndarray] = []
+        shape_types: List[str] = []
+        shape_colours: list[str] = []
+        for shape in all_napari_shapes:
+            if shape.shape_type == "image":
+                logging.warning('Unable to display "image" type shapes')
+                continue
+            else:
+                shapes_list.append(shape.shape)
+                shape_types.append(shape.shape_type)
+                shape_colours.append(shape.colour)
+
         if name in viewer.layers:
-            viewer.layers[name].data = [] # need to clear data before updating, to account for different shapes.
-            viewer.layers[name].data = all_napari_shapes
-            viewer.layers[name].shape_type = all_shape_types
-            viewer.layers[name].edge_color = all_shape_colours
-            viewer.layers[name].face_color = all_shape_colours
+            viewer.layers[
+                name
+            ].data = []  # need to clear data before updating, to account for different shapes.
+            viewer.layers[name].data = shapes_list
+            viewer.layers[name].shape_type = shape_types
+            viewer.layers[name].edge_color = shape_colours
+            viewer.layers[name].face_color = shape_colours
             viewer.layers[name].translate = translation
         else:
             viewer.add_shapes(
-                data=all_napari_shapes,
+                data=shapes_list,
                 name=name,
-                shape_type=all_shape_types,
+                shape_type=shape_types,
                 edge_width=SHAPES_LAYER_PROPERTIES["edge_width"],
-                edge_color=all_shape_colours,
-                face_color=all_shape_colours,
+                edge_color=shape_colours,
+                face_color=shape_colours,
                 opacity=SHAPES_LAYER_PROPERTIES["opacity"],
                 blending=SHAPES_LAYER_PROPERTIES["blending"],
                 translate=translation,
