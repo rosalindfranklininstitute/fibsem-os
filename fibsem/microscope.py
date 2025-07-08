@@ -9,13 +9,12 @@ import time
 import warnings
 from abc import ABC, abstractmethod
 from copy import deepcopy
-from typing import Dict, List, Optional, Tuple, Union, Any
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from packaging.version import InvalidVersion
 from packaging.version import parse as parse_version
 from psygnal import Signal
-from numpy.typing import NDArray
 
 THERMO_API_AVAILABLE = False
 MINIMUM_AUTOSCRIPT_VERSION_4_7 = parse_version("4.7")
