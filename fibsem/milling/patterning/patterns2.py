@@ -169,7 +169,6 @@ class TrenchBitmapPattern(BasePattern[FibsemBitmapSettings]):
             width=self.width,
             height=self.lower_trench_height,
             depth=self.depth,
-            # Allows flipping of lower pattern without first loading the bitmap
             rotation=0,
             centre_x=self.point.x,
             centre_y=centre_lower_y,
