@@ -1,11 +1,13 @@
 import logging
 import math
 from dataclasses import dataclass
-from typing import Callable, List, Tuple
+from typing import List, Tuple, Union
 
+import numpy as np
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
-import numpy as np
+from matplotlib.collections import PatchCollection
+from skimage.transform import resize
 
 from fibsem.utils import format_value
 from fibsem.milling.base import FibsemMillingStage
@@ -54,8 +56,18 @@ OVERLAP_PROPERTIES = {
     "line_style": "--",
 }
 
-
-
+class _PatchCollectionHandler:
+    def legend_artist(self, legend, orig_handle, fontsize, handlebox):
+        x0, y0 = handlebox.xdescent, handlebox.ydescent
+        width, height = handlebox.width, handlebox.height
+        p0 = orig_handle.get_children()[0]
+        fc= p0.get_facecolor()
+        ec = p0.get_edgecolor()
+        patch = mpatches.Rectangle((x0, y0), width, height, facecolor=fc,
+                                   edgecolor=ec,
+                                   transform=handlebox.get_transform())
+        handlebox.add_artist(patch)
+        return patch
 
 
 def _rect_pattern_to_image_pixels(
@@ -148,13 +160,13 @@ def _line_pattern_to_image_pixels(
 
     return start_pixel_x, start_pixel_y, end_pixel_x, end_pixel_y
 
-def _create_rectangle_patch(shape: FibsemRectangleSettings, image: FibsemImage, colour: str) -> mpatches.Rectangle:
+def _create_rectangle_patches(shape: FibsemRectangleSettings, image: FibsemImage, colour: str) -> PatchCollection:
     """Create a rectangle patch from a shape."""
     pixel_size = image.metadata.pixel_size.x
     image_shape = image.data.shape
     px, py, width, height = _rect_pattern_to_image_pixels(shape, pixel_size, image_shape)
     
-    return mpatches.Rectangle(
+    patch = mpatches.Rectangle(
         (px - width / 2, py - height / 2),
         width=width,
         height=height,
@@ -165,8 +177,9 @@ def _create_rectangle_patch(shape: FibsemRectangleSettings, image: FibsemImage, 
         facecolor=colour,
         alpha=PROPERTIES["opacity"],
     )
+    return PatchCollection([patch], match_original=True)
 
-def _create_circle_patch(shape: FibsemCircleSettings, image: FibsemImage, colour: str) -> mpatches.Patch:
+def _create_circle_patches(shape: FibsemCircleSettings, image: FibsemImage, colour: str) -> PatchCollection:
     """Create a circle patch from a shape."""
     pixel_size = image.metadata.pixel_size.x
     image_shape = image.data.shape
@@ -176,7 +189,7 @@ def _create_circle_patch(shape: FibsemCircleSettings, image: FibsemImage, colour
     
     if inner_radius_px > 0:
         # annulus/ring pattern
-        return mpatches.Annulus(
+        patch = mpatches.Annulus(
             (px, py),
             r=inner_radius_px,
             width=radius_px - inner_radius_px,
@@ -188,7 +201,7 @@ def _create_circle_patch(shape: FibsemCircleSettings, image: FibsemImage, colour
         )
     elif start_angle != 0 or end_angle != 360:
         # arc/wedge pattern
-        return mpatches.Wedge(
+        patch = mpatches.Wedge(
             (px, py),
             r=radius_px,
             theta1=start_angle,
@@ -200,7 +213,7 @@ def _create_circle_patch(shape: FibsemCircleSettings, image: FibsemImage, colour
         )
     else:
         # full circle pattern
-        return mpatches.Circle(
+        patch = mpatches.Circle(
             (px, py),
             radius=radius_px,
             linewidth=PROPERTIES["line_width"],
@@ -208,8 +221,9 @@ def _create_circle_patch(shape: FibsemCircleSettings, image: FibsemImage, colour
             facecolor=colour,
             alpha=PROPERTIES["opacity"],
         )
+    return PatchCollection([patch], match_original=True)
 
-def _create_line_patch(shape: FibsemLineSettings, image: FibsemImage, colour: str) -> mpatches.FancyArrowPatch:
+def _create_line_patches(shape: FibsemLineSettings, image: FibsemImage, colour: str) -> PatchCollection:
     """Create a line patch from a shape."""
     pixel_size = image.metadata.pixel_size.x
     image_shape = image.data.shape
@@ -217,7 +231,7 @@ def _create_line_patch(shape: FibsemLineSettings, image: FibsemImage, colour: st
         shape, pixel_size, image_shape
     )
     
-    return mpatches.FancyArrowPatch(
+    patch = mpatches.FancyArrowPatch(
         (start_pixel_x, start_pixel_y),
         (end_pixel_x, end_pixel_y),
         linewidth=PROPERTIES["line_width"] * 2,
@@ -226,7 +240,7 @@ def _create_line_patch(shape: FibsemLineSettings, image: FibsemImage, colour: st
         alpha=PROPERTIES["opacity"] + 0.2,
         arrowstyle='-',
     )
-
+    return PatchCollection([patch], match_original=True)
 
 
 def _detect_pattern_overlaps(milling_stages: List[FibsemMillingStage], image: FibsemImage) -> List[mpatches.Patch]:
@@ -326,7 +340,7 @@ def draw_milling_patterns(
     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
     ax.imshow(image.data, cmap="gray")
 
-    patches = []
+    patch_collections: list[PatchCollection] = []
     for i, stage in enumerate(milling_stages):
         colour = COLOURS[i % len(COLOURS)]
         pattern = stage.pattern
@@ -358,11 +372,13 @@ def draw_milling_patterns(
             try:
                 # Get the appropriate drawing function based on shape type
                 if isinstance(shape, FibsemRectangleSettings):
-                    patch = _create_rectangle_patch(shape, image, colour)
+                    patch_collection = _create_rectangle_patches(shape, image, colour)
                 elif isinstance(shape, FibsemCircleSettings):
-                    patch = _create_circle_patch(shape, image, colour)
+                    patch_collection = _create_circle_patches(shape, image, colour)
                 elif isinstance(shape, FibsemLineSettings):
-                    patch = _create_line_patch(shape, image, colour)
+                    patch_collection = _create_line_patches(shape, image, colour)
+                elif isinstance(shape, FibsemBitmapSettings):
+                    patch_collection = _create_bitmap_patches(shape, image, colour)
                 else:
                     logging.debug(f"Unsupported shape type {type(shape)}, skipping")
                     continue
@@ -372,30 +388,35 @@ def draw_milling_patterns(
                     lbl = f"{stage.name}"
                     if extra:
                         lbl += f" ({extra})"
-                    patch.set_label(lbl)
+                    patch_collection.set_label(lbl)
                 
-                stage_patches.append(patch)
+                stage_patches.append(patch_collection)
                 
             except Exception as e:
                 logging.debug(f"Failed to create patch for shape {type(shape)}: {e}")
                 continue
         
-        patches.extend(stage_patches)
+        patch_collections.extend(stage_patches)
 
-    for patch in patches:
-        ax.add_patch(patch)
-    
     # Detect and highlight overlaps if requested
     if highlight_overlaps:
-        overlap_patches = _detect_pattern_overlaps(milling_stages, image)
-        for overlap_patch in overlap_patches:
-            ax.add_patch(overlap_patch)
-        
-        # Add overlap indication to legend
-        if overlap_patches:
-            overlap_patches[0].set_label("Overlaps")
-    
-    ax.legend()
+        overlap_patches = PatchCollection(
+            _detect_pattern_overlaps(milling_stages, image), match_original=True
+        )
+        overlap_patches.set_label("Overlaps")
+        patch_collections.append(overlap_patches)
+
+    handles, labels = ax.get_legend_handles_labels()
+    for pc in patch_collections:
+        pc_label = pc.get_label()
+        if pc_label is not None:
+            handles.append(pc)
+            labels.append(pc_label)
+    ax.legend(
+        handles=handles,
+        labels=labels,
+        handler_map={PatchCollection: _PatchCollectionHandler},
+    )
 
     # set axis limits
     ax.set_xlim(0, image.data.shape[1])
