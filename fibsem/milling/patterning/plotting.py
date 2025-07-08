@@ -2,7 +2,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import List, Tuple, Optional, overload
+from typing import List, Tuple, Union, Optional, overload
 from collections.abc import Sequence
 
 import numpy as np
@@ -10,6 +10,7 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 from matplotlib.collections import PatchCollection
 from matplotlib.legend_handler import HandlerBase
+from skimage.transform import resize
 
 from fibsem.utils import format_value
 from fibsem.milling.base import FibsemMillingStage
@@ -101,7 +102,7 @@ class _PatchCollectionHandler(HandlerBase):
 
 
 def _rect_pattern_to_image_pixels(
-    pattern: FibsemRectangleSettings, pixel_size: float, image_shape: Tuple[int, int]
+    pattern: Union[FibsemRectangleSettings, FibsemBitmapSettings], pixel_size: float, image_shape: Tuple[int, int]
 ) -> Tuple[float, float, float, float]:
     """Convert rectangle pattern to image pixel coordinates.
     Args:
@@ -271,6 +272,136 @@ def _create_line_patches(shape: FibsemLineSettings, image: FibsemImage, colour: 
         arrowstyle='-',
     )
     return PatchCollection([patch], match_original=True)
+
+
+def _create_bitmap_patches(
+    shape: FibsemBitmapSettings, image: FibsemImage, colour: str
+) -> PatchCollection:
+    """Draw a rectangle pattern on an image.
+    Args:
+        image: FibsemImage: Image to draw pattern on.
+        pattern: BitmapPattern: Bitmap pattern to draw.
+        colour: str: Colour of bitmap patches (blanked regions are inverted).
+        name: str: Name of the bitmap patches.
+    Returns:
+        List[PatchCollection]: List of patch collections to draw.
+    """
+    # common image properties
+    pixel_size = image.metadata.pixel_size.x  # assume isotropic
+    image_shape = image.data.shape
+
+    # convert from microscope image (real-space) to image pixel-space
+    px, py, width, height = _rect_pattern_to_image_pixels(
+        shape, pixel_size, (image_shape[0], image_shape[1])
+    )
+
+    bitmap = shape.bitmap
+
+    if bitmap is None:
+        bitmap = np.zeros((1, 1, 2), dtype=float)
+
+    if shape.flip_y:
+        bitmap = np.flip(bitmap, axis=0)
+
+    dwell_time_array = bitmap[:, :, 0]
+    blanking_array = bitmap[:, :, 1] == 1  # blanking index is 1 for both
+
+    # Ensure no rectangles will be subpixel (these are not displayed)
+    target_shape = list(dwell_time_array.shape)
+    resize_array = False
+    if height < dwell_time_array.shape[0]:
+        resize_array = True
+        target_shape[0] = round(height)
+    if width < dwell_time_array.shape[1]:
+        resize_array = True
+        target_shape[1] = round(width)
+
+    if resize_array:
+        dwell_time_array = resize(
+            dwell_time_array,
+            output_shape=target_shape,
+            preserve_range=True,
+            order=1,  # bi-linear interpolation
+        )
+        blanking_array = resize(
+            blanking_array, output_shape=target_shape, preserve_range=True, order=0
+        )
+
+    rectangle_height = (
+        1
+        if round(height) == dwell_time_array.shape[0]
+        else height / dwell_time_array.shape[0]
+    )
+    rectangle_width = (
+        1
+        if round(width) == dwell_time_array.shape[1]
+        else width / dwell_time_array.shape[1]
+    )
+
+    dwell_time_rects: List[mpatches.Rectangle] = []
+    blanking_rects: List[mpatches.Rectangle] = []
+    for j in range(dwell_time_array.shape[0]):
+        for k in range(dwell_time_array.shape[1]):
+            # Draw a small rectangle for each (resized) bitmap pixel
+
+            # Add blanked rectangle
+            if blanking_array[j, k]:
+                blanking_rects.append(
+                    mpatches.Rectangle(
+                        (
+                            px - (width / 2) + k * rectangle_width,
+                            py - (height / 2) + j * rectangle_height,
+                        ),  # bottom left corner
+                        width=rectangle_width,
+                        height=rectangle_height,
+                        angle=math.degrees(shape.rotation),
+                        rotation_point=PROPERTIES["rotation_point"],
+                        linewidth=0,
+                        edgecolor="none",
+                        facecolor="black",
+                        alpha=PROPERTIES["opacity"],
+                    )
+                )
+            else:
+                dwell_time_rects.append(
+                    mpatches.Rectangle(
+                        (
+                            px - (width / 2) + k * rectangle_width,
+                            py - (height / 2) + j * rectangle_height,
+                        ),  # bottom left corner
+                        width=rectangle_width,
+                        height=rectangle_height,
+                        angle=math.degrees(shape.rotation),
+                        rotation_point=PROPERTIES["rotation_point"],
+                        linewidth=0,
+                        edgecolor="none",
+                        facecolor=colour,
+                        alpha=PROPERTIES["opacity"] * dwell_time_array[j, k],
+                    )
+                )
+
+    # Draw the edges
+    edge_rectangle = mpatches.Rectangle(
+        (
+            px - width / 2,
+            py - height / 2,
+        ),  # bottom left corner
+        width=width,
+        height=height,
+        angle=math.degrees(shape.rotation),
+        rotation_point=PROPERTIES["rotation_point"],
+        linewidth=PROPERTIES["line_width"],
+        edgecolor=colour,
+        facecolor="none",
+        alpha=PROPERTIES["opacity"],
+    )
+
+    # Adding the blanking rectangles at the end ensures the blanking goes on
+    # top and that legend colour is correct
+    bitmap_rects = [*dwell_time_rects, *blanking_rects, edge_rectangle]
+
+    # Store all the rectangles as a patch collection
+    return PatchCollection(bitmap_rects, match_original=True)
 
 
 def _detect_pattern_overlaps(milling_stages: List[FibsemMillingStage], image: FibsemImage) -> List[mpatches.Patch]:
