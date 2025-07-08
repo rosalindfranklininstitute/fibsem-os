@@ -1036,7 +1036,8 @@ class FibsemBitmapSettings(FibsemPatternSettings):
     def __post_init__(self, path: Optional[Union[str, os.PathLike]], array: Optional[NDArray[Any]]) -> None:
         if array is None:
             if path is None:
-                raise AttributeError("FibsemBitmapSettings requires array or path to be set")
+                # Fallback on empty array
+                array = np.zeros((1, 1, 2), dtype=float)
             else:
                 from PIL import Image
                 array = np.asarray(Image.open(path), dtype=np.uint8)
