@@ -264,8 +264,12 @@ def _create_bitmap_patches(
         shape, pixel_size, (image_shape[0], image_shape[1])
     )
 
-    dwell_time_array = shape.bitmap[:, :, 0]
-    blanking_array = shape.bitmap[:, :, 1] == 1  # blanking index is 1 for both
+    bitmap = shape.bitmap
+    if shape.flip_y:
+        bitmap = np.flip(bitmap, axis=0)
+
+    dwell_time_array = bitmap[:, :, 0]
+    blanking_array = bitmap[:, :, 1] == 1  # blanking index is 1 for both
 
     # Ensure no rectangles will be subpixel (these are not displayed)
     target_shape = list(dwell_time_array.shape)
@@ -709,6 +713,9 @@ def draw_bitmap_shape(
     cy = int(icy - (centre_y / pixelsize_y))
 
     image_bmp = Image.fromarray(pattern_settings.bitmap[:, :, 0])
+
+    if pattern_settings.flip_y:
+        image_bmp = image_bmp.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
 
     image_resized = image_bmp.resize((w, h))
 
