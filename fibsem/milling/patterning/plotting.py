@@ -71,7 +71,7 @@ class _PatchCollectionHandler:
 
 
 def _rect_pattern_to_image_pixels(
-    pattern: FibsemRectangleSettings, pixel_size: float, image_shape: Tuple[int, int]
+    pattern: Union[FibsemRectangleSettings, FibsemBitmapSettings], pixel_size: float, image_shape: Tuple[int, int]
 ) -> Tuple[float, float, float, float]:
     """Convert rectangle pattern to image pixel coordinates.
     Args:
@@ -241,6 +241,106 @@ def _create_line_patches(shape: FibsemLineSettings, image: FibsemImage, colour: 
         arrowstyle='-',
     )
     return PatchCollection([patch], match_original=True)
+
+
+def _create_bitmap_patches(
+    shape: FibsemBitmapSettings, image: FibsemImage, colour: str
+) -> PatchCollection:
+    """Draw a rectangle pattern on an image.
+    Args:
+        image: FibsemImage: Image to draw pattern on.
+        pattern: BitmapPattern: Bitmap pattern to draw.
+        colour: str: Colour of bitmap patches (blanked regions are inverted).
+        name: str: Name of the bitmap patches.
+    Returns:
+        List[PatchCollection]: List of patch collections to draw.
+    """
+    # common image properties
+    pixel_size = image.metadata.pixel_size.x  # assume isotropic
+    image_shape = image.data.shape
+
+    # convert from microscope image (real-space) to image pixel-space
+    px, py, width, height = _rect_pattern_to_image_pixels(
+        shape, pixel_size, (image_shape[0], image_shape[1])
+    )
+
+    dwell_time_array = shape.bitmap[:, :, 0]
+    blanking_array = shape.bitmap[:, :, 1] == 1  # blanking index is 1 for both
+
+    # Ensure no rectangles will be subpixel (these are not displayed)
+    target_shape = list(dwell_time_array.shape)
+    resize_array = False
+    if height < dwell_time_array.shape[0]:
+        resize_array = True
+        target_shape[0] = round(height)
+    if width < dwell_time_array.shape[1]:
+        resize_array = True
+        target_shape[1] = round(width)
+
+    if resize_array:
+        dwell_time_array = resize(
+            dwell_time_array,
+            output_shape=target_shape,
+            preserve_range=True,
+            order=1,  # bi-linear interpolation
+        )
+        blanking_array = resize(
+            blanking_array, output_shape=target_shape, preserve_range=True, order=0
+        )
+
+    rectangle_height = (
+        1
+        if round(height) == dwell_time_array.shape[0]
+        else height / dwell_time_array.shape[0]
+    )
+    rectangle_width = (
+        1
+        if round(width) == dwell_time_array.shape[1]
+        else width / dwell_time_array.shape[1]
+    )
+
+    bitmap_rects = []
+    for j in range(dwell_time_array.shape[0]):
+        for k in range(dwell_time_array.shape[1]):
+            # Draw a small rectangle for each (resized) bitmap pixel
+            alpha_multiplier = 1 if blanking_array[j, k] else dwell_time_array[j, k]
+            bitmap_rects.append(
+                mpatches.Rectangle(
+                    (
+                        px - (width / 2) + k,
+                        py - (height / 2) + j,
+                    ),  # bottom left corner
+                    width=rectangle_width,
+                    height=rectangle_height,
+                    angle=math.degrees(shape.rotation),
+                    rotation_point=PROPERTIES["rotation_point"],
+                    linewidth=0,
+                    edgecolor="none",
+                    facecolor="black" if blanking_array[j, k] else colour,
+                    alpha=PROPERTIES["opacity"] * alpha_multiplier,
+                )
+            )
+
+    # Draw the edges
+    bitmap_rects.append(
+        mpatches.Rectangle(
+            (
+                px - width / 2,
+                py - height / 2,
+            ),  # bottom left corner
+            width=width,
+            height=height,
+            angle=math.degrees(shape.rotation),
+            rotation_point=PROPERTIES["rotation_point"],
+            linewidth=PROPERTIES["line_width"],
+            edgecolor=colour,
+            facecolor="none",
+            alpha=PROPERTIES["opacity"],
+        )
+    )
+
+    # Store all the rectangles as a patch collection
+    return PatchCollection(bitmap_rects, match_original=True)
 
 
 def _detect_pattern_overlaps(milling_stages: List[FibsemMillingStage], image: FibsemImage) -> List[mpatches.Patch]:
