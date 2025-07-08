@@ -123,13 +123,6 @@ class BitmapPattern(BasePattern[FibsemBitmapSettings]):
         self.shapes = [shape]
         return self.shapes
 
-    @property
-    def volume(self) -> float:
-        if self.shapes: 
-            return super().volume
-        # Rough approximation (allows for when path and array are both unset in GUI)
-        return self.width * self.height * self.depth
-
 
 @dataclass
 class TrenchBitmapPattern(BasePattern[FibsemBitmapSettings]):
@@ -202,13 +195,6 @@ class TrenchBitmapPattern(BasePattern[FibsemBitmapSettings]):
 
         self.shapes = [lower_pattern_settings, upper_pattern_settings]
         return self.shapes
-
-    @property
-    def volume(self) -> float:
-        if self.shapes: 
-            return super().volume
-        # Rough approximation (allows for when path and array are both unset in GUI)
-        return self.width * self.upper_trench_height * self.depth + self.width * self.lower_trench_height * self.depth
 
 
 @dataclass
