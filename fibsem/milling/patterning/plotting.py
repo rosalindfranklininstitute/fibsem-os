@@ -444,19 +444,19 @@ def _create_annulus_shape(width, height, inner_radius, outer_radius):
     donut = np.logical_and(distance <= outer_radius, distance >= inner_radius).astype(int)
     return donut
 
-def draw_annulus_shape(pattern_settings: FibsemCircleSettings, image: FibsemImage) -> DrawnPattern:
+def draw_annulus_shape(pattern_settings: FibsemCircleSettings, image_shape: Tuple[int, int], pixelsize: float) -> DrawnPattern:
     """Convert an annulus pattern to a np array. Note: annulus can only be plotted as image
     Args:
         pattern_settings: FibsemCircleSettings: Annulus pattern settings.
-        image: FibsemImage: Image to draw pattern on.
+        image_shape: Tuple[int, int]: Shape of the image (height, width).
+        pixelsize: float: Pixel size in meters.
     Returns:
-        np.ndarray: Annulus shape in image.
-        Point: Position of the annulus in the image.
+        DrawnPattern: Annulus shape in image.
     """
     
     # image parameters (centre, pixel size)
-    icy, icx = image.data.shape[0] // 2, image.data.shape[1] // 2
-    pixelsize_x, pixelsize_y = image.metadata.pixel_size.x, image.metadata.pixel_size.y
+    icy, icx = image_shape[0] // 2, image_shape[1] // 2
+    pixelsize_x, pixelsize_y = pixelsize, pixelsize
 
     # pattern parameters
     radius = pattern_settings.radius
@@ -482,19 +482,20 @@ def draw_annulus_shape(pattern_settings: FibsemCircleSettings, image: FibsemImag
 
     return DrawnPattern(pattern=annulus_shape, position=pos, is_exclusion=pattern_settings.is_exclusion)
 
-def draw_rectangle_shape(pattern_settings: FibsemRectangleSettings, image: FibsemImage) -> DrawnPattern:
+def draw_rectangle_shape(pattern_settings: FibsemRectangleSettings, image_shape: Tuple[int, int], pixelsize: float) -> DrawnPattern:
     """Convert a rectangle pattern to a np array with rotation support.
     Args:
         pattern_settings: FibsemRectangleSettings: Rectangle pattern settings.
-        image: FibsemImage: Image to draw pattern on.
+        image_shape: Tuple[int, int]: Shape of the image (height, width).
+        pixelsize: float: Pixel size in meters.
     Returns:
         DrawnPattern: Rectangle shape in image with rotation applied.
     """
     from scipy.ndimage import rotate
 
     # image parameters (centre, pixel size)
-    icy, icx = image.data.shape[0] // 2, image.data.shape[1] // 2
-    pixelsize_x, pixelsize_y = image.metadata.pixel_size.x, image.metadata.pixel_size.y
+    icy, icx = image_shape[0] // 2, image_shape[1] // 2
+    pixelsize_x, pixelsize_y = pixelsize, pixelsize
 
     # pattern parameters
     width = pattern_settings.width
@@ -528,11 +529,11 @@ def draw_rectangle_shape(pattern_settings: FibsemRectangleSettings, image: Fibse
 
     return DrawnPattern(pattern=shape, position=pos, is_exclusion=pattern_settings.is_exclusion)
 
-def draw_pattern_shape(ps, image):
+def draw_pattern_shape(ps, image_shape: Tuple[int, int], pixelsize: float):
     if isinstance(ps, FibsemCircleSettings):
-        return draw_annulus_shape(ps, image)
+        return draw_annulus_shape(ps, image_shape, pixelsize)
     elif isinstance(ps, FibsemRectangleSettings):
-        return draw_rectangle_shape(ps, image)
+        return draw_rectangle_shape(ps, image_shape, pixelsize)
     else:
         raise ValueError(f"Unsupported shape type {type(ps)}")
 
