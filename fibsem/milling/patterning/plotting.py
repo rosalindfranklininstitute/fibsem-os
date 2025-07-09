@@ -14,6 +14,7 @@ from fibsem.structures import (
     FibsemImage,
     FibsemLineSettings,
     FibsemRectangleSettings,
+    FibsemPatternSettings,
     Point,
 )
 from .utils import (
@@ -529,7 +530,7 @@ def draw_rectangle_shape(pattern_settings: FibsemRectangleSettings, image_shape:
 
     return DrawnPattern(pattern=shape, position=pos, is_exclusion=pattern_settings.is_exclusion)
 
-def draw_pattern_shape(ps, image_shape: Tuple[int, int], pixelsize: float):
+def draw_pattern_shape(ps: FibsemPatternSettings, image_shape: Tuple[int, int], pixelsize: float) -> DrawnPattern:
     if isinstance(ps, FibsemCircleSettings):
         return draw_annulus_shape(ps, image_shape, pixelsize)
     elif isinstance(ps, FibsemRectangleSettings):
