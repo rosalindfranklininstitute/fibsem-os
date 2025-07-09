@@ -498,7 +498,7 @@ def is_pattern_placement_valid(pattern: BasePattern, image: FibsemImage) -> bool
         )
         if shape_type in IMAGE_PATTERN_TYPES:
             is_valid_placement = validate_pattern_image_placement(
-                image_shape=image.data.shape, shape=napari_shape, **kwargs
+                image_shape=image.data.shape, image=napari_shape, **kwargs
             )
         else:
             is_valid_placement = validate_pattern_shape_placement(
