@@ -245,7 +245,7 @@ def _detect_pattern_overlaps(milling_stages: List[FibsemMillingStage], image: Fi
     # Create masks for each pattern
     pattern_masks = []
     for stage in milling_stages:
-        stage_mask = create_pattern_mask(stage, image, include_exclusions=False)
+        stage_mask = create_pattern_mask(stage, image.data.shape, pixelsize=image.metadata.pixel_size.x, include_exclusions=False)
         pattern_masks.append(stage_mask)
     
     # Find overlaps between patterns
@@ -587,7 +587,7 @@ def simple_example(stages: List[FibsemMillingStage], image: FibsemImage) -> plt.
     
     for i, stage in enumerate(stages):
         # Create mask
-        mask = create_pattern_mask(stage, image)
+        mask = create_pattern_mask(stage, image.data.shape, pixelsize=image.metadata.pixel_size.x)
         
         # Show mask as colored overlay
         masked = np.ma.masked_where(~mask, mask)
