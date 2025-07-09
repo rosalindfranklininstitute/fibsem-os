@@ -721,7 +721,7 @@ def draw_bitmap_shape(
     if bitmap is None:
         bitmap = np.zeros((1, 1, 2), dtype=float)
 
-    image_bmp = Image.fromarray(bitmap[:, :, 0])
+    image_bmp = Image.fromarray(bitmap[:, :, 0].squeeze().astype(float))
 
     if pattern_settings.flip_y:
         image_bmp = image_bmp.transpose(Image.Transpose.FLIP_TOP_BOTTOM)

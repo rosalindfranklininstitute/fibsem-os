@@ -1,15 +1,17 @@
 import logging
 import time
 from copy import deepcopy
-from dataclasses import dataclass
-from typing import List, Optional, Tuple, Dict
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple, Dict, Any
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import to_rgba
 import napari
 import numpy as np
 from napari.layers import Image as NapariImageLayer
 from napari.layers import Layer as NapariLayer
 from napari.layers import Shapes as NapariShapesLayers
+from napari.utils import Colormap as NapariColormap
 from PIL import Image
 
 from fibsem.milling import FibsemMillingStage
@@ -46,9 +48,9 @@ IMAGE_LAYER_PROPERTIES = {
     "cmap": {0: "black", 1: COLOURS[0]} # override with colour wheel
 }
 
-
+IMAGE_PATTERN_TYPES = ("bitmap",)
 IGNORE_SHAPES_LAYERS = ["ruler_line", "crosshair", "scalebar", "label", "alignment_area"] # ignore these layers when removing all shapes
-IMAGE_PATTERN_LAYERS = ["annulus-layer", "bmp_Image"]
+IMAGE_PATTERN_LAYERS = ["annulus-layer", "bitmap-image"]
 STAGE_POSTIION_SHAPE_LAYERS = ["saved-stage-positions", "current-stage-position"] # for minimap
 IGNORE_SHAPES_LAYERS.extend(STAGE_POSTIION_SHAPE_LAYERS)
 
@@ -59,7 +61,7 @@ def get_image_pixel_centre(shape: Tuple[int, int]) -> Tuple[int, int]:
 
 def convert_pattern_to_napari_circle(
     pattern_settings: FibsemCircleSettings, shape: Tuple[int, int], pixelsize: float
-):
+) -> Tuple[np.ndarray, Dict[str, Any]]:
     if not isinstance(pattern_settings, FibsemCircleSettings):
         raise ValueError(f"Pattern is not a Circle: {pattern_settings}")
     
@@ -77,14 +79,14 @@ def convert_pattern_to_napari_circle(
 
     # create circle
     shape = [[ymin, xmin], [ymin, xmax], [ymax, xmax], [ymax, xmin]]  # ??
-    return np.array(shape)
+    return np.array(shape), {}
 
 
 def convert_pattern_to_napari_line(
     pattern_settings: FibsemLineSettings, 
     shape: Tuple[int, int], 
     pixelsize: float
-) -> np.ndarray:
+) -> Tuple[np.ndarray, Dict[str, Any]]:
     
     if not isinstance(pattern_settings, FibsemLineSettings):
         raise ValueError(f"Pattern is not a Line: {pattern_settings}")
@@ -106,11 +108,11 @@ def convert_pattern_to_napari_line(
 
     # napari shape format [[y_start, x_start], [y_end, x_end]])
     shape = [[py0, px0], [py1, px1]]
-    return np.array(shape)
+    return np.array(shape), {}
 
 def convert_pattern_to_napari_rect(
     pattern_settings: FibsemRectangleSettings, shape: Tuple[int, int], pixelsize: float
-) -> np.ndarray:
+) -> Tuple[np.ndarray, Dict[str, Any]]:
     
     if not isinstance(pattern_settings, FibsemRectangleSettings):
         raise ValueError(f"Pattern is not a Rectangle: {pattern_settings}")
@@ -143,11 +145,11 @@ def convert_pattern_to_napari_rect(
     py3 = cy + (xmin * np.sin(r) + ymax * np.cos(r))
     # napari shape format
     shape = [[py0, px0], [py1, px1], [py2, px2], [py3, px3]]
-    return np.array(shape)
+    return np.array(shape), {}
 
-def create_crosshair_shape(centre_point: Point, 
-                           shape: Tuple[int, int], 
-                           pixelsize: float) -> np.ndarray:
+def create_crosshair_shape(
+    centre_point: Point, shape: Tuple[int, int], pixelsize: float
+) -> Tuple[np.ndarray, Dict[str, Any]]:
 
     icy, icx = shape[0] // 2, shape[1] // 2
 
@@ -174,15 +176,15 @@ def create_crosshair_shape(centre_point: Point,
         px3 = cx + (xmin * np.cos(r) - ymax * np.sin(r))
         py3 = cy + (xmin * np.sin(r) + ymax * np.cos(r))
         # napari shape format
-        shape = [[py0, px0], [py1, px1], [py2, px2], [py3, px3]]
-        crosshair_shapes.append(shape)
+        rect = [[py0, px0], [py1, px1], [py2, px2], [py3, px3]]
+        crosshair_shapes.append(rect)
 
-    return np.array(crosshair_shapes)
+    return np.array(crosshair_shapes), {}
 
 
 def convert_bitmap_pattern_to_napari_image(
     pattern_settings: FibsemBitmapSettings, shape: Tuple[int, int], pixelsize: float
-) -> Tuple[np.ndarray, Tuple[int, int]]:
+) -> Tuple[np.ndarray, Dict[str, Any]]:
     icy, icx = get_image_pixel_centre(shape)
 
     resize_x = int(pattern_settings.width / pixelsize)
@@ -191,13 +193,19 @@ def convert_bitmap_pattern_to_napari_image(
     if pattern_settings.bitmap is None:
         image_bmp = Image.fromarray(np.zeros((resize_x, resize_y), dtype=float))
     else:
-        image_bmp = Image.fromarray(pattern_settings.bitmap)
+        image_bmp = Image.fromarray(pattern_settings.bitmap[:, :, 0].squeeze().astype(float))
         if pattern_settings.flip_y:
             image_bmp = image_bmp.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
         image_bmp = image_bmp.resize((resize_x, resize_y))
 
-    image_bmp = image_bmp.rotate(-pattern_settings.rotation, expand=True)
+    # image_bmp = image_bmp.rotate(-pattern_settings.rotation, expand=True)
     img_array = np.asarray(image_bmp)
+
+    # Add border
+    img_array[:1, :] = 1
+    img_array[:, :1] = 1
+    img_array[img_array.shape[0] - 2:, :] = 1
+    img_array[:,img_array.shape[1] - 2 :] = 1
 
     # TODO: account for FIB translation
     pattern_centre_x = int(round(icx - pattern_settings.width / pixelsize / 2))
@@ -212,8 +220,7 @@ def convert_bitmap_pattern_to_napari_image(
 
     translate_position = (pattern_point_y, pattern_point_x)
 
-    return img_array, translate_position
-
+    return img_array, {"translate": translate_position}
 
 def remove_all_napari_shapes_layers(viewer: napari.Viewer, layer_type: NapariLayer = NapariShapesLayers, ignore: List[str] = []):
     """Remove all shapes layers from the napari viewer, excluding a specified list."""
@@ -234,7 +241,7 @@ NAPARI_DRAWING_DICT = {
     FibsemRectangleSettings: (convert_pattern_to_napari_rect, "rectangle"),
     FibsemCircleSettings: (convert_pattern_to_napari_circle, "ellipse"),
     FibsemLineSettings: (convert_pattern_to_napari_line, "line"),
-    FibsemBitmapSettings: (convert_bitmap_pattern_to_napari_image, "image"),
+    FibsemBitmapSettings: (convert_bitmap_pattern_to_napari_image, "bitmap"),
 }
 
 
@@ -243,6 +250,7 @@ class NapariShape:
     shape: np.ndarray
     shape_type: str
     colour: str
+    napari_kwargs: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def draw(
@@ -259,10 +267,11 @@ class NapariShape:
             logging.warning(f"Pattern type {type(pattern_settings)} not supported")
             return None
 
-        shape = napari_drawing_fn(
+        shape, kwargs = napari_drawing_fn(
             pattern_settings=pattern_settings, shape=image_shape, pixelsize=pixelsize
         )
-        return cls(shape=shape, shape_type=shape_type, colour=colour)
+
+        return cls(shape=shape, shape_type=shape_type, colour=colour, napari_kwargs=kwargs)
 
 
 def draw_milling_patterns_in_napari(
@@ -324,16 +333,18 @@ def draw_milling_patterns_in_napari(
         # draw the patterns as a shape layer
         if napari_shapes:
             if draw_crosshair:
-                for crosshair_shape in create_crosshair_shape(
+                crosshair_shape, kwargs = create_crosshair_shape(
                     centre_point=stage.pattern.point,
                     shape=image_shape,
                     pixelsize=pixelsize,
-                ):
+                )
+                for rect in crosshair_shape:
                     napari_shapes.append(
                         NapariShape(
-                            shape=crosshair_shape,
+                            shape=rect,
                             shape_type="rectangle",
                             colour=napari_layer_colour,
+                            napari_kwargs=kwargs
                         )
                     )
 
@@ -342,46 +353,72 @@ def draw_milling_patterns_in_napari(
 
     name = "Milling Patterns"
     if all_napari_shapes:
+        layer_names_used = {name}
         shapes_list: List[np.ndarray] = []
         shape_types: List[str] = []
         shape_colours: list[str] = []
+        image_list: List[NapariShape] = []
         for shape in all_napari_shapes:
-            if shape.shape_type == "image":
-                logging.warning('Unable to display "image" type shapes')
-                continue
+            if shape.shape_type in IMAGE_PATTERN_TYPES:
+                image_list.append(shape)
             else:
                 shapes_list.append(shape.shape)
                 shape_types.append(shape.shape_type)
                 shape_colours.append(shape.colour)
 
-        if name in viewer.layers:
-            viewer.layers[
-                name
-            ].data = []  # need to clear data before updating, to account for different shapes.
-            viewer.layers[name].data = shapes_list
-            viewer.layers[name].shape_type = shape_types
-            viewer.layers[name].edge_color = shape_colours
-            viewer.layers[name].face_color = shape_colours
-            viewer.layers[name].translate = translation
-        else:
-            viewer.add_shapes(
-                data=shapes_list,
-                name=name,
-                shape_type=shape_types,
-                edge_width=SHAPES_LAYER_PROPERTIES["edge_width"],
-                edge_color=shape_colours,
-                face_color=shape_colours,
+        if shapes_list:
+            if name in viewer.layers:
+                viewer.layers[
+                    name
+                ].data = []  # need to clear data before updating, to account for different shapes.
+                viewer.layers[name].data = shapes_list
+                viewer.layers[name].shape_type = shape_types
+                viewer.layers[name].edge_color = shape_colours
+                viewer.layers[name].face_color = shape_colours
+                viewer.layers[name].translate = translation
+            else:
+                viewer.add_shapes(
+                    data=shapes_list,
+                    name=name,
+                    shape_type=shape_types,
+                    edge_width=SHAPES_LAYER_PROPERTIES["edge_width"],
+                    edge_color=shape_colours,
+                    face_color=shape_colours,
+                    opacity=SHAPES_LAYER_PROPERTIES["opacity"],
+                    blending=SHAPES_LAYER_PROPERTIES["blending"],
+                    translate=translation,
+                )
+        
+        for layer_name in IMAGE_PATTERN_LAYERS:
+            # Clear up all existing images
+            if layer_name in viewer.layers:
+                viewer.layers.remove(viewer.layers[layer_name])
+        for shape in image_list:
+            additional_translation = shape.napari_kwargs.pop("translation", (0, 0))
+            image_translation = translation.copy() + additional_translation
+            layer_name = f"{shape.shape_type}-image"
+            layer_names_used.add(layer_name)
+            viewer.add_image(
+                data=shape.shape,
+                name=layer_name,
+                colormap=NapariColormap(
+                    [to_rgba(shape.colour, alpha=0), to_rgba(shape.colour, alpha=1)], 
+                ),
                 opacity=SHAPES_LAYER_PROPERTIES["opacity"],
                 blending=SHAPES_LAYER_PROPERTIES["blending"],
-                translate=translation,
+                translate=image_translation,
+                depiction="plane",
+                **shape.napari_kwargs,
             )
+
+    layer_name_list = list(layer_names_used)
 
     # remove all un-updated layers (assume they have been deleted)
     remove_all_napari_shapes_layers(viewer=viewer,
                                     layer_type=NapariShapesLayers,
-                                    ignore=[name])
+                                    ignore=layer_name_list)
 
-    return [name] # list of milling pattern layers
+    return layer_name_list # list of milling pattern layers
 
 def convert_point_to_napari(resolution: list, pixel_size: float, centre: Point):
     icy, icx = resolution[1] // 2, resolution[0] // 2
@@ -391,16 +428,44 @@ def convert_point_to_napari(resolution: list, pixel_size: float, centre: Point):
 
     return Point(cx, cy)
 
-def validate_pattern_placement(
-    image_shape: Tuple[int, int], shape: List[List[float]]
+
+def validate_pattern_image_placement(image_shape: Tuple[int, int], image: np.ndarray, **kwargs: Any) -> bool:
+    x_lim = image_shape[1]
+    y_lim = image_shape[0]
+    
+    rotate = kwargs.get("rotate", 0)
+    translation = kwargs.get("translation", (0, 0))
+    if rotate:
+        image_im = Image.fromarray(image)
+        image_im.rotate(-np.radians(rotate), expand=True)
+        image = np.asarray(image_im)
+
+    ys, xs = np.nonzero(image)
+    ys += translation[0]
+    xs += translation[1]
+
+    ymin = np.min(ys) + translation[0]
+    ymax = np.max(ys) + translation[0]
+    xmin = np.min(xs) + translation[1]
+    xmax = np.max(xs) + translation[1]
+
+    if xmin < 0 or xmax > x_lim:
+        return False
+    if ymin < 0 or ymax > y_lim:
+        return False
+
+def validate_pattern_shape_placement(
+    image_shape: Tuple[int, int], shape: List[List[float]], **kwargs: Any
 ):
     """Validate that the pattern shapes are within the image resolution"""
     x_lim = image_shape[1]
     y_lim = image_shape[0]
 
+    translation = kwargs.get("translation", (0, 0))
+
     for coordinate in shape:
-        x_coord = coordinate[1]
-        y_coord = coordinate[0]
+        x_coord = coordinate[1] + translation[1]
+        y_coord = coordinate[0] + translation[0]
 
         if x_coord < 0 or x_coord > x_lim:
             return False
@@ -413,26 +478,36 @@ def is_pattern_placement_valid(pattern: BasePattern, image: FibsemImage) -> bool
     """Check if the pattern is within the image bounds."""
 
     if isinstance(pattern, FiducialPattern):
-        _, is_not_valid_placement = calculate_fiducial_area_v2(image=image, 
-                                            fiducial_centre = deepcopy(pattern.point), 
-                                            fiducial_length = pattern.height)
+        _, is_not_valid_placement = calculate_fiducial_area_v2(
+            image=image,
+            fiducial_centre=deepcopy(pattern.point),
+            fiducial_length=pattern.height,
+        )
         return not is_not_valid_placement
-    
+
     for pattern_settings in pattern.define():
-        draw_func = NAPARI_DRAWING_FUNCTIONS.get(type(pattern_settings), None)
+        draw_func, shape_type = NAPARI_DRAWING_DICT.get(type(pattern_settings), (None, None))
         if draw_func is None:
             logging.warning(f"Pattern type {type(pattern_settings)} not supported")
             return False
-        
-        napari_shape = draw_func(pattern_settings=pattern_settings, 
-                                 shape=image.data.shape, 
-                                 pixelsize=image.metadata.pixel_size.x)
-        is_valid_placement = validate_pattern_placement(image_shape=image.data.shape, 
-                                                        shape=napari_shape)
+
+        napari_shape, kwargs = draw_func(
+            pattern_settings=pattern_settings,
+            shape=image.data.shape,
+            pixelsize=image.metadata.pixel_size.x,
+        )
+        if shape_type in IMAGE_PATTERN_TYPES:
+            is_valid_placement = validate_pattern_image_placement(
+                image_shape=image.data.shape, shape=napari_shape, **kwargs
+            )
+        else:
+            is_valid_placement = validate_pattern_shape_placement(
+                image_shape=image.data.shape, shape=napari_shape, **kwargs
+            )
 
         if not is_valid_placement:
             return False
-    
+
     return True
 
 def convert_reduced_area_to_napari_shape(reduced_area: FibsemRectangle, image_shape: Tuple[int, int]) -> np.ndarray:
