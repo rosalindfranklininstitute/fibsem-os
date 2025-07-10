@@ -156,9 +156,16 @@ class TrenchBitmapPattern(BasePattern[FibsemBitmapSettings]):
         )
 
         flip_lower_y = False
-        if self.array_lower is None:
+
+        array_lower = self.array_lower
+        path_lower = self.path_lower.strip()
+
+        if not path_lower:
+            path_lower = None
+
+        if array_lower is None:
             array_lower = None
-            if not self.path_lower.strip():
+            if path_lower is None:
                 path_lower = None
                 # Fallback on upper bitmap/path
                 flip_lower_y = True
