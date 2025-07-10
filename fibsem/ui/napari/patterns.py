@@ -509,48 +509,45 @@ def convert_point_to_napari(resolution: list, pixel_size: float, centre: Point):
     return Point(cx, cy)
 
 
-def validate_pattern_image_placement(image_shape: Tuple[int, int], image: np.ndarray, **kwargs: Any) -> bool:
-    x_lim = image_shape[1]
-    y_lim = image_shape[0]
-    
-    rotate = kwargs.get("rotate", 0)
-    translation = kwargs.get("translation", (0, 0))
-    if rotate:
-        image_im = Image.fromarray(image)
-        image_im.rotate(-np.radians(rotate), expand=True)
-        image = np.asarray(image_im)
+def validate_pattern_image_placement(
+    image_shape: Tuple[int, int], image: np.ndarray, affine: Optional[np.ndarray] = None
+) -> bool:
+    corners = [
+        [0, 0],
+        [image.shape[0], 0],
+        [image.shape[0], image.shape[1]],
+        [0, image.shape[1]],
+    ]
 
-    ys, xs = np.nonzero(image)
-    ys += translation[0]
-    xs += translation[1]
+    return validate_pattern_shape_placement(
+        image_shape=image_shape, shape=corners, affine=affine
+    )
 
-    ymin = np.min(ys) + translation[0]
-    ymax = np.max(ys) + translation[0]
-    xmin = np.min(xs) + translation[1]
-    xmax = np.max(xs) + translation[1]
-
-    if xmin < 0 or xmax > x_lim:
-        return False
-    if ymin < 0 or ymax > y_lim:
-        return False
 
 def validate_pattern_shape_placement(
-    image_shape: Tuple[int, int], shape: List[List[float]], **kwargs: Any
+    image_shape: Tuple[int, int],
+    shape: List[List[Union[float, int]]],
+    affine: Optional[np.ndarray] = None,
 ):
     """Validate that the pattern shapes are within the image resolution"""
     x_lim = image_shape[1]
     y_lim = image_shape[0]
 
-    translation = kwargs.get("translation", (0, 0))
+    shape_array = np.asarray(shape, dtype=float)
+    if affine is not None:
+        shape_array = np.asarray(
+            [coord @ affine[:2, :] for coord in shape_array], dtype=float
+        )
 
-    for coordinate in shape:
-        x_coord = coordinate[1] + translation[1]
-        y_coord = coordinate[0] + translation[0]
+    ymin = np.min(shape_array[:, 0])
+    ymax = np.max(shape_array[:, 0])
+    xmin = np.min(shape_array[:, 1])
+    xmax = np.max(shape_array[:, 1])
 
-        if x_coord < 0 or x_coord > x_lim:
-            return False
-        if y_coord < 0 or y_coord > y_lim:
-            return False
+    if xmin < 0 or xmax > x_lim:
+        return False
+    if ymin < 0 or ymax > y_lim:
+        return False
 
     return True
 
