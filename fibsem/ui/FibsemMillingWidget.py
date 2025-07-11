@@ -730,6 +730,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
             elif isinstance(val, str):
                 control_widget = QtWidgets.QLineEdit()
                 control_widget.setText(val)
+                control_widget.editingFinished.connect(self.redraw_patterns)
             else:
                 logging.error("'%s' of %s cannot be displayed by UI", key, pattern.name)
                 continue
