@@ -541,10 +541,10 @@ def validate_pattern_shape_placement(
 
     shape_array = np.asarray(shape, dtype=float)
     if affine is not None:
-        shape_array = np.asarray(
-            [coord @ affine[:2, :] for coord in shape_array], dtype=float
-        )
-
+        # A bit fiddly but this applies the affine array to the 2D coordinates
+        # without broadcasting issues.
+        coords = np.pad(shape_array, ((0, 0), (0, 1)), constant_values=1)
+        shape_array = (affine[:2, :] @ coords[:, :, np.newaxis]).squeeze(-1)
     ymin = np.min(shape_array[:, 0])
     ymax = np.max(shape_array[:, 0])
     xmin = np.min(shape_array[:, 1])
