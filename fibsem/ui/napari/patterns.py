@@ -237,7 +237,9 @@ def convert_bitmap_pattern_to_napari_image(
         img_array = np.zeros((resize_y, resize_x), dtype=float)
     else:
         # Resize here so that the border displays correctly
-        img_array = resize(pattern_settings.bitmap[:, :, 0].astype(float), (resize_y, resize_x))
+        img_array = resize(
+            pattern_settings.bitmap[:, :, 0].astype(float), (resize_y, resize_x)
+        )
 
     # scale = (img_array.shape[1] / resize_y, img_array.shape[0] / resize_x)
     # Add border
@@ -251,12 +253,12 @@ def convert_bitmap_pattern_to_napari_image(
         "affine": create_affine_matrix(
             rotation=pattern_settings.rotation,
             centre=(
-                img_array.shape[0] / 2 + translation[0],
-                img_array.shape[1] / 2 + translation[1],
+                img_array.shape[0] / 2,
+                img_array.shape[1] / 2,
             ),
             translation=(
-                icy - pattern_settings.centre_y / pixelsize + translation[0],
-                icx + pattern_settings.centre_x / pixelsize + translation[1],
+                icy - pattern_settings.centre_y / pixelsize,
+                icx + pattern_settings.centre_x / pixelsize,
             ),
         ),
         "translate": translation,
@@ -439,10 +441,9 @@ def draw_milling_patterns_in_napari(
                     shape_colours.append(pattern.colour)
 
             if shapes_list:
-                
                 if layer_name in viewer.layers:
                     # need to clear data before updating, to account for different shapes.
-                    viewer.layers[layer_name].data = []  
+                    viewer.layers[layer_name].data = []
                     viewer.layers[layer_name].data = shapes_list
                     viewer.layers[layer_name].shape_type = shape_types
                     viewer.layers[layer_name].edge_color = shape_colours
@@ -465,6 +466,13 @@ def draw_milling_patterns_in_napari(
                 layer_names_used.add(layer_name)
 
             for shape in image_list:
+                # Napari applies translate before affine, which causes issues
+                # with centring for the rotation and scaling. Applying
+                # translate via the affine avoids this issue.
+                translate_affine = np.asarray(
+                    [[1, 0, shape.translate[0]], [0, 1, shape.translate[1]], [0, 0, 1]]
+                )
+                affine = translate_affine @ shape.affine
                 # Requires a separate layer per-image
                 layer_name = f"{shape.name}-{shape.shape_type}-{shape.index}"
                 if layer_name in viewer.layers:
@@ -473,8 +481,7 @@ def draw_milling_patterns_in_napari(
                     viewer.layers[layer_name].colormap = COLOURMAPS[shape.colour]
                     viewer.layers[layer_name].opacity = opacity
                     viewer.layers[layer_name].blending = blending
-                    viewer.layers[layer_name].translate = shape.translate
-                    viewer.layers[layer_name].affine = shape.affine
+                    viewer.layers[layer_name].affine = affine
                 else:
                     viewer.add_image(
                         data=shape.shape,
@@ -483,8 +490,7 @@ def draw_milling_patterns_in_napari(
                         opacity=opacity,
                         blending=blending,
                         depiction="plane",
-                        translate=shape.translate,
-                        affine=shape.affine,
+                        affine=affine,
                     )
                 layer_names_used.add(layer_name)
 
