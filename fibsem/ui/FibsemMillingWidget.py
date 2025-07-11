@@ -146,7 +146,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
 
         self.current_milling_stage: Optional[FibsemMillingStage] = None
         self.milling_stages: List[FibsemMillingStage] = []
-        self.milling_pattern_layers: List[Layer] = []
+        self.milling_pattern_layers: List[str] = []
 
         self.pattern_attribute_widgets: Dict[str, Tuple[QtWidgets.QLabel, QtWidgets.QWidget]] = {}
         self.strategy_config_widgets: Dict[str, Tuple[QtWidgets.QLabel, QtWidgets.QWidget]] = {}
