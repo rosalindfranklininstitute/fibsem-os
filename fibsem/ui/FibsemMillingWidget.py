@@ -1,6 +1,7 @@
 import logging
 import math
 import os
+import traceback
 from copy import deepcopy
 from pprint import pprint
 from typing import Dict, List, Optional, Tuple, Union
@@ -1213,7 +1214,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
             )  
 
         except Exception as e:
-            napari.utils.notifications.show_error(f"Error drawing patterns: {e}")
+            napari.utils.notifications.show_error(f"Error drawing patterns: {traceback.format_exc()}")
             logging.error(e)
 
         self.image_widget.restore_active_layer_for_movement()
