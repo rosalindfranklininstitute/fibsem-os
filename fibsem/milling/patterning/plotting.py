@@ -1,7 +1,8 @@
+from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import Callable, List, Tuple
+from typing import List, Tuple, Optional, overload
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
@@ -294,6 +295,37 @@ def _detect_pattern_overlaps(milling_stages: List[FibsemMillingStage], image: Fi
     
     return overlap_patches
 
+
+@overload
+def draw_milling_patterns(
+    image: FibsemImage,
+    milling_stages: List[FibsemMillingStage],
+    crosshair: bool = ...,
+    scalebar: bool = ...,
+    title: str = ...,
+    show_current: bool = ...,
+    show_preset: bool = ...,
+    show_depth: bool = ...,
+    highlight_overlaps: bool = ...,
+    ax: plt.Axes = ...,
+) -> Tuple[None, plt.Axes]: ...
+
+
+@overload
+def draw_milling_patterns(
+    image: FibsemImage,
+    milling_stages: List[FibsemMillingStage],
+    crosshair: bool = ...,
+    scalebar: bool = ...,
+    title: str = ...,
+    show_current: bool = ...,
+    show_preset: bool = ...,
+    show_depth: bool = ...,
+    highlight_overlaps: bool = ...,
+    ax: None = ...,
+) -> Tuple[plt.Figure, plt.Axes]: ...
+
+
 def draw_milling_patterns(
     image: FibsemImage,
     milling_stages: List[FibsemMillingStage],
@@ -304,7 +336,8 @@ def draw_milling_patterns(
     show_preset: bool = False,
     show_depth: bool = False,
     highlight_overlaps: bool = False,
-) -> plt.Figure:
+    ax: Optional[plt.Axes] = None,
+) -> Tuple[Optional[plt.Figure], plt.Axes]:
     """
     Draw milling patterns on an image. Supports patterns composed of multiple shape types.
     Args:
@@ -317,12 +350,13 @@ def draw_milling_patterns(
         show_preset: bool: Show preset name in legend.
         show_depth: bool: Show pattern depth in microns in legend.
         highlight_overlaps: bool: Highlight overlapping pattern regions.
+        ax: Optional[plt.Axes]: Axis that patterns will be plotted on. If no axis is given, a figure and axis will be created.
     Returns:
-        plt.Figure: Figure with patterns drawn.
+        Tuple[Optional[plt.Figure], plt.Axes]: Figure (if ax is None) and axis with pattern drawn.
     """
-    fig: plt.Figure
-    ax: plt.Axes    
-    fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+    fig: Optional[plt.Figure] = None
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
     ax.imshow(image.data, cmap="gray")
 
     patches = []
