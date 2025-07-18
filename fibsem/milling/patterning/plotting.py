@@ -530,11 +530,45 @@ def draw_rectangle_shape(pattern_settings: FibsemRectangleSettings, image_shape:
 
     return DrawnPattern(pattern=shape, position=pos, is_exclusion=pattern_settings.is_exclusion)
 
+
+def draw_line_shape(
+    pattern_settings: FibsemLineSettings,
+    image_shape: Tuple[int, int],
+    pixelsize: float,
+) -> DrawnPattern:
+    from skimage.draw import line_aa
+
+    start_pixel_x, start_pixel_y, end_pixel_x, end_pixel_y = (
+        _line_pattern_to_image_pixels(
+            pattern_settings, pixelsize, (image_shape[0], image_shape[1])
+        )
+    )
+
+    array_max = (
+        int(round(end_pixel_y - start_pixel_y)),
+        int(round(end_pixel_x - start_pixel_x)),
+    )
+
+    shape = np.zeros((array_max[0] + 1, array_max[1] + 1), dtype=float)
+
+    rr, cc, val = line_aa(0, 0, array_max[0], array_max[1])
+    shape[rr, cc] = val
+
+    cx = int(round((start_pixel_x + end_pixel_x) / 2))
+    cy = int(round((start_pixel_y + end_pixel_y) / 2))
+
+    pos = Point(x=cx, y=cy)
+
+    return DrawnPattern(pattern=shape, position=pos, is_exclusion=False)
+
+
 def draw_pattern_shape(ps: FibsemPatternSettings, image_shape: Tuple[int, int], pixelsize: float) -> DrawnPattern:
     if isinstance(ps, FibsemCircleSettings):
         return draw_annulus_shape(ps, image_shape, pixelsize)
     elif isinstance(ps, FibsemRectangleSettings):
         return draw_rectangle_shape(ps, image_shape, pixelsize)
+    elif isinstance(ps, FibsemLineSettings):
+        return draw_line_shape(ps, image_shape, pixelsize)
     else:
         raise ValueError(f"Unsupported shape type {type(ps)}")
 
