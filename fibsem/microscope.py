@@ -130,6 +130,8 @@ class FibsemMicroscope(ABC):
     _stop_acquisition_event = threading.Event()
     _acquisition_thread: threading.Thread = None
 
+    fm: 'FluorescenceMicroscope' = None # type: ignore
+
     @abstractmethod
     def connect_to_microscope(self, ip_address: str, port: int) -> None:
         pass
@@ -1028,6 +1030,9 @@ class FibsemMicroscope(ABC):
         )
         return np.degrees(milling_angle)
 
+    @property
+    def current_grid(self) -> str:
+        return "None"
 
 class ThermoMicroscope(FibsemMicroscope):
     """
