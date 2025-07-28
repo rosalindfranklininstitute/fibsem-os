@@ -1694,6 +1694,8 @@ class FibsemImage:
                     tiff_image.pages[0].tags["ImageDescription"].value
                 )
                 metadata = FibsemImageMetadata.from_dict(metadata)
+                metadata.image_settings.filename = os.path.basename(tiff_path)
+                metadata.image_settings.path = os.path.dirname(tiff_path)
             except Exception as e:
                 metadata = None
                 # print(f"Error: {e}")
