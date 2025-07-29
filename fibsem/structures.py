@@ -672,7 +672,8 @@ class ImageSettings:
         from fibsem import utils
 
         image_settings = deepcopy(image.metadata.image_settings)
-        image_settings.filename = utils.current_timestamp()
+        if image_settings.filename is None:
+            image_settings.filename = utils.current_timestamp()
         image_settings.save = True
 
         return image_settings
