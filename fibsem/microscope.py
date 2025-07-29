@@ -9,12 +9,15 @@ import time
 import warnings
 from abc import ABC, abstractmethod
 from copy import deepcopy
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 import numpy as np
 from packaging.version import InvalidVersion
 from packaging.version import parse as parse_version
 from psygnal import Signal
+
+if TYPE_CHECKING:
+    from fibsem.milling.base import FibsemMillingStage
 
 THERMO_API_AVAILABLE = False
 MINIMUM_AUTOSCRIPT_VERSION_4_7 = parse_version("4.7")
@@ -339,6 +342,9 @@ class FibsemMicroscope(ABC):
     def finish_milling(self, imaging_current: float, imaging_voltage: float) -> None:
         pass
 
+    def finish_milling2(self):
+        pass
+
     @abstractmethod
     def stop_milling(self) -> None:
         return
@@ -362,6 +368,32 @@ class FibsemMicroscope(ABC):
     @abstractmethod
     def estimate_milling_time(self) -> float:
         pass
+
+    def draw_patterns(self, patterns: List[FibsemPatternSettings]) -> None:
+        """Draw milling patterns on the microscope from the list of settings
+        Args:
+            patterns (List[FibsemPatternSettings]): List of milling patterns
+        """
+        for pattern in patterns:
+            self.draw_pattern(pattern)
+
+    def draw_pattern(self, pattern: FibsemPatternSettings) -> None:
+        """Draw a milling pattern from settings
+
+        Args:
+            pattern_settings (FibsemPatternSettings): pattern settings
+        """
+        if isinstance(pattern, FibsemRectangleSettings):
+            self.draw_rectangle(pattern)
+
+        elif isinstance(pattern, FibsemLineSettings):
+            self.draw_line(pattern)
+
+        elif isinstance(pattern, FibsemCircleSettings):
+            self.draw_circle(pattern)
+
+        elif isinstance(pattern, FibsemBitmapSettings):
+            self.draw_bitmap_pattern(pattern, pattern.path)
 
     @abstractmethod
     def draw_rectangle(self, pattern_settings: FibsemRectangleSettings):
@@ -2279,6 +2311,43 @@ class ThermoMicroscope(FibsemMicroscope):
          # TODO: store initial imaging settings in setup_milling, restore here, rather than hybrid
 
         logging.debug({"msg": "finish_milling", "imaging_current": imaging_current, "imaging_voltage": imaging_voltage})
+
+    # def setup_milling2(
+    #     self,
+    #     milling_stage: 'FibsemMillingStage',
+    # ):
+    #     """
+    #     Configure the microscope for milling using the ion beam.
+        
+    #     Args:
+    #         milling_stage (FibsemMillingStage): Milling stage.
+    #     """
+    #     self.milling_channel = milling_stage.milling.milling_channel
+    #     self._default_application_file = milling_stage.milling.application_file
+    #     _check_beam(self.milling_channel, self.system)
+    #     self.set_channel(self.milling_channel)
+    #     self.clear_patterns()  # clear any existing patterns
+    #     self.set_default_patterning_beam_type(self.milling_channel)
+    #     self.set_default_application_file(milling_stage.milling.application_file)
+    #     self.set_patterning_mode(milling_stage.milling.patterning_mode)
+    #     self.set_field_of_view(hfw=milling_stage.milling.hfw, beam_type=self.milling_channel)
+    #     self.set_beam_current(current=milling_stage.milling.milling_current, beam_type=self.milling_channel)
+    #     self.set_beam_voltage(voltage=milling_stage.milling.milling_voltage, beam_type=self.milling_channel)
+
+    def set_default_patterning_beam_type(self, beam_type: BeamType):
+        """Set the default beam type for patterning."""
+        if beam_type not in BeamType:
+            raise ValueError(f"Beam type {beam_type} not supported. Supported types: {list(BeamType)}")
+        
+        self.connection.patterning.set_default_beam_type(beam_type.value)
+        return beam_type
+
+    # def finish_milling2(self):
+    #     """Clear the patterns and reset the beam settings to the imaging state."""
+    #     self.clear_patterns()
+    #     self.set_beam_current(current=self.system.ion.beam.beam_current, beam_type=self.milling_channel)
+    #     self.set_beam_voltage(voltage=self.system.ion.beam.voltage, beam_type=self.milling_channel)
+    #     self.set_patterning_mode(mode="Serial")  # reset to serial mode
 
     def start_milling(self) -> None:
         """Start the milling process."""
