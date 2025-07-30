@@ -3,14 +3,12 @@ import logging
 import math
 from dataclasses import dataclass
 from typing import List, Tuple, Union, Optional, overload
-from collections.abc import Sequence
 
 import numpy as np
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 from matplotlib.colors import to_rgba, ListedColormap
 from matplotlib.collections import PatchCollection
-from matplotlib.legend_handler import HandlerBase
 from skimage.transform import resize
 
 from fibsem.utils import format_value
@@ -59,47 +57,6 @@ OVERLAP_PROPERTIES = {
     "alpha": 0.6,
     "line_style": "--",
 }
-
-
-class _PatchCollectionHandler(HandlerBase):
-    def _default_update_prop(
-        self, legend_handle: mpatches.Patch, orig_handle: mpatches.Patch
-    ) -> None:
-        legend_handle.update_from(_PatchCollectionHandler.__create_patch(orig_handle))
-
-    @staticmethod
-    def __create_patch(patch_collection: PatchCollection) -> mpatches.Patch:
-        fc = patch_collection.get_facecolor()[0]
-        if isinstance(fc, (Sequence, np.ndarray)) and fc[-1]:
-            fc = list(fc)
-            fc[-1] = 1  # ignore alpha
-
-        ec = patch_collection.get_edgecolor()[0]
-        if isinstance(ec, (Sequence, np.ndarray)) and ec[-1]:
-            ec = list(ec)
-            ec[-1] = 1  # ignore alpha
-        return mpatches.Patch(
-            facecolor=fc,
-            edgecolor=ec,
-        )
-
-    def create_artists(
-        self,
-        legend,
-        orig_handle: PatchCollection,
-        xdescent,
-        ydescent,
-        width,
-        height,
-        fontsize,
-        trans,
-    ) -> List[mpatches.Rectangle]:
-        patch = mpatches.Rectangle(
-            (0, 0), width=width + xdescent, height=height + ydescent
-        )
-        self.update_prop(patch, orig_handle, legend)
-        patch.set_transform(trans)
-        return [patch]
 
 
 def _rect_pattern_to_image_pixels(
