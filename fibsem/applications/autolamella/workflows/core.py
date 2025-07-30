@@ -768,7 +768,7 @@ def align_feature_coincident(
     image_settings: ImageSettings,
     lamella: Lamella,
     checkpoint: str,
-    parent_ui: AutoLamellaUI,
+    parent_ui: Optional[AutoLamellaUI],
     validate: bool,
     hfw: float = fcfg.REFERENCE_HFW_MEDIUM,
     feature: Feature = LamellaCentre(),
