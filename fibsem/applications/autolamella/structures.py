@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 import pandas as pd
 import petname
@@ -39,6 +39,10 @@ from fibsem.applications.autolamella.protocol.validation import (
     TRENCH_KEY,
     UNDERCUT_KEY,
 )
+
+if TYPE_CHECKING:
+    from fibsem.applications.autolamella.workflows.tasks import AutoLamellaTaskConfig, AutoLamellaTaskState
+
 
 
 class AutoLamellaStage(Enum):
@@ -135,6 +139,10 @@ class Lamella:
     milling_workflows: Dict[str, List[FibsemMillingStage]] = None
     states: Dict[AutoLamellaStage, LamellaState] = None
     _id: str = str(uuid.uuid4())
+    tasks: Dict[str, 'AutoLamellaTaskConfig'] = field(default_factory=dict)
+    poses: Dict[str, FibsemStagePosition] = field(default_factory=dict)  # QUERY: these should be state not position?
+    task: Optional['AutoLamellaTaskState'] = None
+    task_history: List['AutoLamellaTaskState'] = field(default_factory=list)
 
     def __post_init__(self):
         # only make the dir, if the base path is actually set, 
@@ -199,6 +207,22 @@ class Lamella:
     def stage_position(self) -> FibsemStagePosition:
         return self.state.microscope_state.stage_position
 
+    def has_completed_task(self, task_name: str) -> bool:
+        """Check if the lamella has completed a specific task."""
+        return task_name in self.completed_tasks
+
+    @property
+    def completed_tasks(self) -> List[str]:
+        """Return a list of completed task names."""
+        return [task.name for task in self.task_history]
+
+    @property
+    def last_completed_task(self) -> Optional['AutoLamellaTaskState']:
+        """Return the last completed task state."""
+        if self.task_history:
+            return self.task_history[-1]
+        return None
+
     def to_dict(self):
         return {
             "petname": self.petname,
@@ -215,6 +239,10 @@ class Lamella:
             "landing_selected": self.landing_selected,
             "id": str(self._id),
             "states": {k.name: v.to_dict() for k, v in self.states.items()},
+            "poses": {k: v.to_dict() for k, v in self.poses.items()},
+            "tasks": {k: v.to_dict() for k, v in self.tasks.items()},
+            "task": self.task.to_dict() if self.task is not None else None,
+            "task_history": [task.to_dict() for task in self.task_history],
         }
 
     @property
@@ -276,6 +304,9 @@ class Lamella:
             landing_selected = bool(data.get("landing_selected", False)),
             _id=data.get("id", None),
             states=states,
+            poses = {k: FibsemStagePosition.from_dict(v) for k, v in data.get("poses", {}).items()},
+            # tasks={k: AutoLamellaTaskConfig.from_dict(v) for k, v in data.get("tasks", {}).items()},
+            # task=AutoLamellaTaskState.from_dict(data["task"]) if data.get("task", None) is not None else None,
         )
 
     def load_reference_image(self, fname) -> FibsemImage:

@@ -192,7 +192,7 @@ class FibsemMillingTask:
                 except Exception as e:
                     logging.error(f"Error running milling stage: {stage.name}, {e}")
 
-            self._handle_progress({"msg": f"Finished {len(self.stages)} Milling Stages. Restoring Imaging Conditions..."})
+            self._handle_progress({"msg": f"Finished Milling Task: {self.name}. Restoring Imaging Conditions..."})
 
         except Exception as e:
             logging.error(e)
