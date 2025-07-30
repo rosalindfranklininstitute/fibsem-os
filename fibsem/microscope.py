@@ -976,7 +976,7 @@ class FibsemMicroscope(ABC):
         if currrent_orientation == target_orientation:
             return stage_position
 
-        if currrent_orientation == "UNKNOWN":
+        if currrent_orientation == "NONE":
             raise ValueError("Unknown orientation. Cannot convert stage position.")
 
         orientation = self.get_orientation(target_orientation)
