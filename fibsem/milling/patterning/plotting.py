@@ -8,6 +8,7 @@ from collections.abc import Sequence
 import numpy as np
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+from matplotlib.colors import to_rgba, ListedColormap
 from matplotlib.collections import PatchCollection
 from matplotlib.legend_handler import HandlerBase
 from skimage.transform import resize
@@ -191,12 +192,22 @@ def _line_pattern_to_image_pixels(
 
     return start_pixel_x, start_pixel_y, end_pixel_x, end_pixel_y
 
-def _create_rectangle_patches(shape: FibsemRectangleSettings, image: FibsemImage, colour: str) -> PatchCollection:
+
+def _add_rectangle_mpl(
+    shape: FibsemRectangleSettings,
+    image: FibsemImage,
+    colour: str,
+    ax: plt.Axes,
+    label: str | None = None,
+    zorder: int | None = None,
+) -> mpatches.Patch | None:
     """Create a rectangle patch from a shape."""
     pixel_size = image.metadata.pixel_size.x
     image_shape = image.data.shape
-    px, py, width, height = _rect_pattern_to_image_pixels(shape, pixel_size, image_shape)
-    
+    px, py, width, height = _rect_pattern_to_image_pixels(
+        shape, pixel_size, image_shape
+    )
+
     patch = mpatches.Rectangle(
         (px - width / 2, py - height / 2),
         width=width,
@@ -207,17 +218,32 @@ def _create_rectangle_patches(shape: FibsemRectangleSettings, image: FibsemImage
         edgecolor=colour,
         facecolor=colour,
         alpha=PROPERTIES["opacity"],
+        zorder=zorder,
     )
-    return PatchCollection([patch], match_original=True)
 
-def _create_circle_patches(shape: FibsemCircleSettings, image: FibsemImage, colour: str) -> PatchCollection:
+    ax.add_patch(patch)
+
+    if label is not None:
+        return mpatches.Patch(
+            color=colour, linewidth=PROPERTIES["line_width"], label=label
+        )
+
+
+def _add_circle_mpl(
+    shape: FibsemCircleSettings,
+    image: FibsemImage,
+    colour: str,
+    ax: plt.Axes,
+    label: str | None = None,
+    zorder: int | None = None,
+) -> mpatches.Patch | None:
     """Create a circle patch from a shape."""
     pixel_size = image.metadata.pixel_size.x
     image_shape = image.data.shape
-    px, py, radius_px, inner_radius_px, start_angle, end_angle = _circle_pattern_to_image_pixels(
-        shape, pixel_size, image_shape
+    px, py, radius_px, inner_radius_px, start_angle, end_angle = (
+        _circle_pattern_to_image_pixels(shape, pixel_size, image_shape)
     )
-    
+
     if inner_radius_px > 0:
         # annulus/ring pattern
         patch = mpatches.Annulus(
@@ -229,6 +255,7 @@ def _create_circle_patches(shape: FibsemCircleSettings, image: FibsemImage, colo
             edgecolor=colour,
             facecolor=colour,
             alpha=PROPERTIES["opacity"],
+            zorder=zorder,
         )
     elif start_angle != 0 or end_angle != 360:
         # arc/wedge pattern
@@ -241,6 +268,7 @@ def _create_circle_patches(shape: FibsemCircleSettings, image: FibsemImage, colo
             edgecolor=colour,
             facecolor=colour,
             alpha=PROPERTIES["opacity"],
+            zorder=zorder,
         )
     else:
         # full circle pattern
@@ -251,17 +279,32 @@ def _create_circle_patches(shape: FibsemCircleSettings, image: FibsemImage, colo
             edgecolor=colour,
             facecolor=colour,
             alpha=PROPERTIES["opacity"],
+            zorder=zorder,
         )
-    return PatchCollection([patch], match_original=True)
 
-def _create_line_patches(shape: FibsemLineSettings, image: FibsemImage, colour: str) -> PatchCollection:
+    ax.add_patch(patch)
+
+    if label is not None:
+        return mpatches.Patch(
+            color=colour, linewidth=PROPERTIES["line_width"], label=label
+        )
+
+
+def _add_line_mpl(
+    shape: FibsemLineSettings,
+    image: FibsemImage,
+    colour: str,
+    ax: plt.Axes,
+    label: str | None = None,
+    zorder: int | None = None,
+) -> mpatches.Patch | None:
     """Create a line patch from a shape."""
     pixel_size = image.metadata.pixel_size.x
     image_shape = image.data.shape
-    start_pixel_x, start_pixel_y, end_pixel_x, end_pixel_y = _line_pattern_to_image_pixels(
-        shape, pixel_size, image_shape
+    start_pixel_x, start_pixel_y, end_pixel_x, end_pixel_y = (
+        _line_pattern_to_image_pixels(shape, pixel_size, image_shape)
     )
-    
+
     patch = mpatches.FancyArrowPatch(
         (start_pixel_x, start_pixel_y),
         (end_pixel_x, end_pixel_y),
@@ -269,22 +312,36 @@ def _create_line_patches(shape: FibsemLineSettings, image: FibsemImage, colour: 
         edgecolor=colour,
         facecolor=colour,
         alpha=PROPERTIES["opacity"] + 0.2,
-        arrowstyle='-',
+        arrowstyle="-",
+        zorder=zorder,
     )
-    return PatchCollection([patch], match_original=True)
+
+    ax.add_patch(patch)
+
+    if label is not None:
+        return mpatches.Patch(
+            color=colour, linewidth=PROPERTIES["line_width"], label=label
+        )
 
 
-def _create_bitmap_patches(
-    shape: FibsemBitmapSettings, image: FibsemImage, colour: str
-) -> PatchCollection:
+def _add_bitmap_mpl(
+    shape: FibsemBitmapSettings,
+    image: FibsemImage,
+    colour: str,
+    ax: plt.Axes,
+    label: str | None = None,
+    zorder: int | None = None,
+) -> mpatches.Patch | None:
     """Draw a rectangle pattern on an image.
     Args:
         image: FibsemImage: Image to draw pattern on.
         pattern: BitmapPattern: Bitmap pattern to draw.
-        colour: str: Colour of bitmap patches (blanked regions are inverted).
-        name: str: Name of the bitmap patches.
+        colour: str: Colour of bitmap patches (blanked regions are black).
+        ax: Axes to plot overlaps on.
+        label: str | None: Label to apply to the output patch.
+        zorder: int | None: Layer on which to plot.
     Returns:
-        List[PatchCollection]: List of patch collections to draw.
+        Patch to be used for the legend if a label is given, otherwise None
     """
     # common image properties
     pixel_size = image.metadata.pixel_size.x  # assume isotropic
@@ -303,8 +360,8 @@ def _create_bitmap_patches(
     if shape.flip_y:
         bitmap = np.flip(bitmap, axis=0)
 
-    dwell_time_array = bitmap[:, :, 0]
-    blanking_array = bitmap[:, :, 1] == 1  # blanking index is 1 for both
+    dwell_time_array = bitmap[:, :, 0].astype(np.float_)
+    blanking_array = bitmap[:, :, 1] == 1
 
     # Ensure no rectangles will be subpixel (these are not displayed)
     target_shape = list(dwell_time_array.shape)
@@ -327,58 +384,16 @@ def _create_bitmap_patches(
             blanking_array, output_shape=target_shape, preserve_range=True, order=0
         )
 
-    rectangle_height = (
-        1
-        if round(height) == dwell_time_array.shape[0]
-        else height / dwell_time_array.shape[0]
+    cmap = ListedColormap(
+        np.linspace((0, 0, 0, 0), to_rgba(colour, alpha=1), endpoint=True, num=256),
+        name=f"{colour}_blend",
+        N=256,
     )
-    rectangle_width = (
-        1
-        if round(width) == dwell_time_array.shape[1]
-        else width / dwell_time_array.shape[1]
-    )
+    rgba = cmap(dwell_time_array)
+    rgba[blanking_array] = (0, 0, 0, 1)
 
-    dwell_time_rects: List[mpatches.Rectangle] = []
-    blanking_rects: List[mpatches.Rectangle] = []
-    for j in range(dwell_time_array.shape[0]):
-        for k in range(dwell_time_array.shape[1]):
-            # Draw a small rectangle for each (resized) bitmap pixel
-
-            # Add blanked rectangle
-            if blanking_array[j, k]:
-                blanking_rects.append(
-                    mpatches.Rectangle(
-                        (
-                            px - (width / 2) + k * rectangle_width,
-                            py - (height / 2) + j * rectangle_height,
-                        ),  # bottom left corner
-                        width=rectangle_width,
-                        height=rectangle_height,
-                        angle=math.degrees(shape.rotation),
-                        rotation_point=PROPERTIES["rotation_point"],
-                        linewidth=0,
-                        edgecolor="none",
-                        facecolor="black",
-                        alpha=PROPERTIES["opacity"],
-                    )
-                )
-            else:
-                dwell_time_rects.append(
-                    mpatches.Rectangle(
-                        (
-                            px - (width / 2) + k * rectangle_width,
-                            py - (height / 2) + j * rectangle_height,
-                        ),  # bottom left corner
-                        width=rectangle_width,
-                        height=rectangle_height,
-                        angle=math.degrees(shape.rotation),
-                        rotation_point=PROPERTIES["rotation_point"],
-                        linewidth=0,
-                        edgecolor="none",
-                        facecolor=colour,
-                        alpha=PROPERTIES["opacity"] * dwell_time_array[j, k],
-                    )
-                )
+    # Apply opacity to the array (imshow alpha overrides these values).
+    rgba[:, :, 3] *= PROPERTIES["opacity"]
 
     # Draw the edges
     edge_rectangle = mpatches.Rectangle(
@@ -394,25 +409,41 @@ def _create_bitmap_patches(
         edgecolor=colour,
         facecolor="none",
         alpha=PROPERTIES["opacity"],
+        zorder=zorder,
+    )
+    ax.add_patch(edge_rectangle)
+
+    ax.imshow(
+        rgba,
+        extent=(0, 1, 0, 1),
+        transform=edge_rectangle.get_patch_transform()
+        + edge_rectangle.get_data_transform(),
+        zorder=edge_rectangle.get_zorder(),
     )
 
-    # Adding the blanking rectangles at the end ensures the blanking goes on
-    # top and that legend colour is correct
-    bitmap_rects = [*dwell_time_rects, *blanking_rects, edge_rectangle]
-
-    # Store all the rectangles as a patch collection
-    return PatchCollection(bitmap_rects, match_original=True)
+    if label:
+        return mpatches.Patch(
+            color=colour, linewidth=PROPERTIES["line_width"], label=label
+        )
 
 
-def _detect_pattern_overlaps(milling_stages: List[FibsemMillingStage], image: FibsemImage) -> List[mpatches.Patch]:
+def _add_overlaps_mpl(
+    milling_stages: List[FibsemMillingStage],
+    image: FibsemImage,
+    ax: plt.Axes,
+    label: str | None = None,
+    zorder: int | None = None,
+) -> mpatches.Patch | None:
     """Detect overlapping regions between patterns and create patches to highlight them.
-    
+
     Args:
         milling_stages: List of milling stages to check for overlaps.
         image: FibsemImage for coordinate conversion.
-    
+        ax: Axes to plot overlaps on.
+        label: str | None: Label to apply to the output patch.
+        zorder: int | None: Layer that the overlaps will be plotted.
     Returns:
-        List of patches representing overlap regions.
+        Patch to be used for the legend if a label is given, otherwise None
     """
     if len(milling_stages) < 2:
         return []
@@ -467,8 +498,18 @@ def _detect_pattern_overlaps(milling_stages: List[FibsemMillingStage], image: Fi
                             linestyle=OVERLAP_PROPERTIES["line_style"],
                         )
                         overlap_patches.append(patch)
-    
-    return overlap_patches
+    if overlap_patches:
+        ax.add_collection(
+            PatchCollection(overlap_patches, match_original=True, zorder=zorder),
+        )
+
+        return mpatches.Patch(
+            linewidth=OVERLAP_PROPERTIES["line_width"],
+            edgecolor=OVERLAP_PROPERTIES["edge_color"],
+            facecolor=OVERLAP_PROPERTIES["face_color"],
+            linestyle=OVERLAP_PROPERTIES["line_style"],
+            label=label,
+        )
 
 
 @overload
@@ -534,6 +575,8 @@ def draw_milling_patterns(
         fig, ax = plt.subplots(1, 1, figsize=(10, 10))
     ax.imshow(image.data, cmap="gray")
 
+    handles: list[mpatches.Patch] = []
+    zorder = 0
     for i, stage in enumerate(milling_stages):
         colour = COLOURS[i % len(COLOURS)]
         pattern = stage.pattern
@@ -559,45 +602,74 @@ def draw_milling_patterns(
             logging.debug(f"Failed to define pattern {pattern.name}: {e}")
             continue
 
+        label = f"{stage.name}"
+        if extra:
+            label += f" ({extra})"
+
         # Process each shape individually
-        stage_patches = []
         for j, shape in enumerate(shapes):
+            handle = None
+            zorder += 1
             try:
                 # Get the appropriate drawing function based on shape type
                 if isinstance(shape, FibsemRectangleSettings):
-                    patch_collection = _create_rectangle_patches(shape, image, colour)
+                    handle = _add_rectangle_mpl(
+                        shape,
+                        image,
+                        colour,
+                        ax=ax,
+                        label=label if j == 0 else None,
+                        zorder=zorder,
+                    )
                 elif isinstance(shape, FibsemCircleSettings):
-                    patch_collection = _create_circle_patches(shape, image, colour)
+                    handle = _add_circle_mpl(
+                        shape,
+                        image,
+                        colour,
+                        ax=ax,
+                        label=label if j == 0 else None,
+                        zorder=zorder,
+                    )
                 elif isinstance(shape, FibsemLineSettings):
-                    patch_collection = _create_line_patches(shape, image, colour)
+                    handle = _add_line_mpl(
+                        shape,
+                        image,
+                        colour,
+                        ax=ax,
+                        label=label if j == 0 else None,
+                        zorder=zorder,
+                    )
                 elif isinstance(shape, FibsemBitmapSettings):
-                    patch_collection = _create_bitmap_patches(shape, image, colour)
+                    handle = _add_bitmap_mpl(
+                        shape,
+                        image,
+                        colour,
+                        ax=ax,
+                        label=label if j == 0 else None,
+                        zorder=zorder,
+                    )
                 else:
                     logging.debug(f"Unsupported shape type {type(shape)}, skipping")
                     continue
-                
-                # Set label only for the first shape of each stage
-                if j == 0:
-                    lbl = f"{stage.name}"
-                    if extra:
-                        lbl += f" ({extra})"
-                    patch_collection.set_label(lbl)
-                ax.add_collection(patch_collection)
-                stage_patches.append(patch_collection)
-                
+                if handle is not None:
+                    handles.append(handle)
             except Exception as e:
                 logging.debug(f"Failed to create patch for shape {type(shape)}: {e}")
                 continue
 
     # Detect and highlight overlaps if requested
     if highlight_overlaps:
-        overlaps = _detect_pattern_overlaps(milling_stages, image)
-        if overlaps:
-            overlap_patches = PatchCollection(overlaps, match_original=True)
-            overlap_patches.set_label("Overlaps")
-            ax.add_collection(overlap_patches)
+        handle = _add_overlaps_mpl(
+            milling_stages,
+            image,
+            ax=ax,
+            label="Overlaps",
+            zorder=zorder + 1,
+        )
+        if handle is not None:
+            handles.append(handle)
 
-    ax.legend(handler_map={PatchCollection: _PatchCollectionHandler()})
+    ax.legend(handles=handles)
 
     # set axis limits
     ax.set_xlim(0, image.data.shape[1])
