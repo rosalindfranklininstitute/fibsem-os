@@ -709,7 +709,7 @@ def end_of_stage_update(
     microscope: FibsemMicroscope, 
     experiment: Experiment, 
     lamella: Lamella, 
-    parent_ui: AutoLamellaUI, 
+    parent_ui: Optional[AutoLamellaUI], 
     save_state: bool = True, 
     update_ui: bool = True,
 ) -> Experiment:
@@ -738,7 +738,7 @@ def start_of_stage_update(
     microscope: FibsemMicroscope,
     lamella: Lamella,
     next_stage: AutoLamellaStage,
-    parent_ui: AutoLamellaUI, 
+    parent_ui: Optional[AutoLamellaUI],
     restore_state: bool = True,
     update_ui: bool = True,
 ) -> Lamella:
