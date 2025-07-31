@@ -3,7 +3,7 @@ description: a description of the protocol
 version: 0.1
 tasks:
   MILL_TRENCH:
-    name: Mill Trench
+    name: MILL_TRENCH
     description: mill trenches around region of interest at high current
     supervise: true
     parameters: # dict
@@ -32,7 +32,7 @@ tasks:
                 width: 2.2e-05
             strategy: {}
   MILL_UNDERCUT:
-    name: Mill Undercut
+    name: MILL_UNDERCUT
     description: mill regions underneath the lamella at an oblique angle
     supervise: true
     parameters: # dict
@@ -68,7 +68,7 @@ tasks:
                 width: 2.2e-05
             strategy: {}
   SETUP_LAMELLA:
-    name: Setup Lamella
+    name: SETUP_LAMELLA
     description: select lamella position and milling pattern position
     supervise: true
     parameters: # dict
@@ -96,7 +96,7 @@ tasks:
                 point: {"x": 25.0e-6, "y": 0.0e-6}
             strategy: {}
   MILL_ROUGH:
-    name: Rough Milling
+    name: MILL_ROUGH
     description: mill rough lamella trenches, and stress relief features
     supervise: true
     parameters: # dict
@@ -173,7 +173,7 @@ tasks:
                 width: 9.5e-06
             strategy: {}
   SPOT_BURN_FIDUCIAL:
-    name: Spot Burn Fiducial
+    name: SPOT_BURN_FIDUCIAL
     description: mill spot fiducial markers for correlation 
     supervise: true
     parameters: # dict
@@ -200,9 +200,10 @@ tasks:
   #         binning: 2x2
   #     zparams: {zmin: -10.0e-6, zmax: 10.0e-6, zstep: 1.0e-6}
   MILL_POLISHING:
-    name: Polishing
+    name: MILL_POLISHING
     description: final low current polishing of the lamella
     supervise: true
+    requires: [SETUP_LAMELLA, MILL_ROUGH]
     parameters: # dict
     milling:
       mill_polishing:
@@ -246,12 +247,12 @@ workflow:
   name: Autolamella Workflow
   description: a description of the workflow
   tasks:
-    - MILL_TRENCH: {supervise: true, required: true}
-    - MILL_UNDERCUT: {supervise: true, required: true}
-    - SETUP_LAMELLA: {supervise: true, required: true}
-    - MILL_ROUGH: {supervise: true, required: true}
-    - SPOT_BURN_FIDUCIAL: {supervise: true, required: false}
-    - MILL_POLISHING: {supervise: true, required: true}
+    # - {name: MILL_TRENCH, supervise: true, required: true}
+    # - {name: MILL_UNDERCUT, supervise: true, required: true}
+    - {name: SETUP_LAMELLA, supervise: true, required: true}
+    - {name: MILL_ROUGH, supervise: true, required: true, requires: [SETUP_LAMELLA]}
+    - {name: SPOT_BURN_FIDUCIAL, supervise: true, required: false, requires: [SETUP_LAMELLA]}
+    - {name: MILL_POLISHING, supervise: true, required: true, requires: [MILL_ROUGH]}
 
 
 grid-tasks:

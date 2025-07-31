@@ -2,51 +2,62 @@
 ######## TASK DEFINITIONS ########
 
 
-from datetime import datetime
-import logging
-import os
-import uuid
-from abc import ABC, abstractmethod
-from copy import deepcopy
-from dataclasses import dataclass, field, asdict, fields
-from typing import List, Dict, Optional, Any, ClassVar, Type, TypeVar
-
-import numpy as np
-
-from fibsem.applications.autolamella.protocol.constants import UNDERCUT_KEY
-import fibsem.config as fcfg
-from fibsem import acquire, alignment, calibration
-from fibsem.microscope import FibsemMicroscope
-from fibsem.milling.tasks import FibsemMillingTaskConfig, run_milling_task
-from fibsem.structures import BeamType, FibsemImage, ImageSettings
-
-from fibsem.applications.autolamella.structures import AutoLamellaStage, Lamella, Experiment
-from fibsem.applications.autolamella.workflows.core import (
-    AutoLamellaUI,
-    log_status_message,
-    set_images_ui,
-    update_milling_ui,
-    update_status_ui,
-    update_detection_ui,
-    update_alignment_area_ui,
-    update_experiment_ui,
-)
-from fibsem.applications.autolamella.protocol.validation import TRENCH_KEY
-from fibsem.applications.autolamella.workflows.core import get_supervision, align_feature_coincident
-from fibsem.transformations import move_to_milling_angle
-
 import logging
 import os
 import time
+import uuid
+from abc import ABC, abstractmethod
 from copy import deepcopy
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
-from typing import List, Tuple, Optional, Any, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import numpy as np
+
 from fibsem import acquire, alignment, calibration
 from fibsem import config as fcfg
+from fibsem.applications.autolamella.protocol.validation import (
+    DEFAULT_ALIGNMENT_AREA,
+    FIDUCIAL_KEY,
+    MILL_POLISHING_KEY,
+    MILL_ROUGH_KEY,
+    TRENCH_KEY,
+    UNDERCUT_KEY,
+)
+
+from fibsem.applications.autolamella.structures import (
+    Experiment,
+    Lamella,
+    AutoLamellaTaskConfig,
+    AutoLamellaTaskState,
+)
+from psygnal import Signal, evented
+
+from fibsem.applications.autolamella.ui import AutoLamellaUI
+from fibsem.applications.autolamella.workflows.core import (
+    align_feature_coincident,
+    get_supervision,
+    log_status_message,
+    set_images_ui,
+    update_alignment_area_ui,
+    update_detection_ui,
+    update_experiment_ui,
+    update_milling_ui,
+    update_status_ui,
+    ask_user,
+)
 from fibsem.constants import DEGREE_SYMBOL
-from fibsem.transformations import is_close_to_milling_angle, move_to_milling_angle
 from fibsem.detection.detection import (
     Feature,
     LamellaBottomEdge,
@@ -55,8 +66,8 @@ from fibsem.detection.detection import (
     VolumeBlockCentre,
 )
 from fibsem.microscope import FibsemMicroscope
-from fibsem.milling import get_milling_stages, get_protocol_from_stages, FibsemMillingStage
 from fibsem.milling.patterning.utils import get_pattern_reduced_area
+from fibsem.milling.tasks import FibsemMillingTaskConfig, run_milling_task
 from fibsem.structures import (
     BeamType,
     FibsemImage,
@@ -65,41 +76,8 @@ from fibsem.structures import (
     ImageSettings,
     Point,
 )
-from fibsem.applications.autolamella.structures import AutoLamellaProtocol
-
-from fibsem.applications.autolamella.protocol.validation import (
-    DEFAULT_ALIGNMENT_AREA,
-    DEFAULT_FIDUCIAL_PROTOCOL,
-    FIDUCIAL_KEY,
-    MICROEXPANSION_KEY,
-    MILL_POLISHING_KEY,
-    MILL_ROUGH_KEY,
-    NOTCH_KEY,
-    SETUP_LAMELLA_KEY,
-    TRENCH_KEY,
-    UNDERCUT_KEY,
-)
-STRESS_RELIEF_KEY = "stress-relief"
-from fibsem.applications.autolamella.structures import (
-    AutoLamellaStage,
-    AutoLamellaMethod,
-    Experiment,
-    Lamella,
-    get_autolamella_method,
-)
-from fibsem.applications.autolamella.ui import AutoLamellaUI
-from fibsem.applications.autolamella.workflows import actions
-from fibsem.applications.autolamella.workflows.ui import (
-    ask_user,
-    set_images_ui,
-    update_alignment_area_ui,
-    update_detection_ui,
-    update_experiment_ui,
-    update_milling_ui,
-    update_status_ui,
-)
+from fibsem.transformations import is_close_to_milling_angle, move_to_milling_angle
 from fibsem.utils import format_duration
-
 
 TAutoLamellaTaskConfig = TypeVar(
     "TAutoLamellaTaskConfig", bound="AutoLamellaTaskConfig"
@@ -107,93 +85,10 @@ TAutoLamellaTaskConfig = TypeVar(
 
 # TODO: create a ui for mill task, update_milling_ui doesnt work for this
 MAX_ALIGNMENT_ATTEMPTS = 3
+STRESS_RELIEF_KEY = "stress-relief"
 
-from psygnal import evented, Signal
 
-@evented
-@dataclass
-class AutoLamellaTaskState:
-    name: str
-    task_id: str
-    lamella_id: str
-    start_timestamp: float = field(default_factory=lambda: datetime.timestamp(datetime.now()))
-    end_timestamp: Optional[float] = None
-    step: str = "NULL"
 
-    @property
-    def completed(self) -> str:
-        return f"{self.name} ({self.completed_at})"
-
-    @property
-    def completed_at(self) -> str:
-        if self.end_timestamp is None:
-            return "in progress"
-        return datetime.fromtimestamp(self.end_timestamp).strftime('%I:%M%p')
-    
-    @property
-    def started_at(self) -> str:
-        return datetime.fromtimestamp(self.start_timestamp).strftime('%I:%M%p')
-
-    @property
-    def duration(self) -> float:
-        if self.end_timestamp is None:
-            return 0
-        return self.end_timestamp - self.start_timestamp
-
-    @property
-    def duration_str(self) -> str:
-        return format_duration(self.duration)
-    
-    def to_dict(self) -> dict:
-        """Convert the task state to a dictionary."""
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> 'AutoLamellaTaskState':
-        """Create a task state from a dictionary."""
-        return cls(**data)
-
-@dataclass
-class AutoLamellaTaskConfig(ABC):
-    """Configuration for AutoLamella tasks."""
-    task_name: ClassVar[str]
-    display_name: ClassVar[str]
-    supervise: bool = True
-    imaging: ImageSettings = field(default_factory=ImageSettings)
-    milling: Dict[str, FibsemMillingTaskConfig] = field(default_factory=dict)
-
-    def to_dict(self) -> dict:
-        """Convert configuration to a dictionary."""
-        ddict = asdict(self)
-        ddict["imaging"] = self.imaging.to_dict()
-        ddict["milling"] = {k: v.to_dict() for k, v in self.milling.items()}
-        return ddict
-
-    @classmethod
-    def from_dict(cls, ddict: Dict[str, Any]) -> 'AutoLamellaTaskConfig':
-        kwargs = {}
-
-        for f in fields(cls):
-            if f.name in ddict:
-                kwargs[f.name] = ddict[f.name]
-
-        # unroll the parameters dictionary
-        if "parameters" in ddict and ddict["parameters"] is not None:                
-            for key, value in ddict["parameters"].items():
-                if key in cls.__annotations__:
-                    kwargs[key] = value
-                else:
-                    # QUERY: should we raise an error here or just ignore unknown parameters?
-                    raise ValueError(f"Unknown parameter '{key}' in task configuration.")
-
-        if "imaging" in ddict:
-            kwargs["imaging"] = ImageSettings.from_dict(ddict["imaging"])
-        if "milling" in ddict:
-            kwargs["milling"] = {
-                k: FibsemMillingTaskConfig.from_dict(v) for k, v in ddict["milling"].items()
-            }
-
-        return cls(**kwargs)
 
 
 class AutoLamellaTask(ABC):
@@ -228,19 +123,16 @@ class AutoLamellaTask(ABC):
         self.post_task()
 
     @abstractmethod
-    def _run(self) -> Lamella:
-        """Run the task and return the updated lamella."""
+    def _run(self) -> None:
         pass
 
     def pre_task(self) -> None:
         logging.info(f"Running {self.task_name} ({self.task_id}) for {self.lamella.name} ({self.lamella._id})")
 
         # pre-task
-        self.lamella.task = AutoLamellaTaskState(
-            name=self.task_name,
-            task_id=self.task_id,
-            lamella_id=self.lamella._id,
-        )
+        self.lamella.task.name = self.task_name
+        self.lamella.task.start_timestamp = datetime.timestamp(datetime.now())
+        self.lamella.task.task_id = self.task_id
         self.log_status_message("STARTED")
 
     def post_task(self) -> None:
@@ -251,7 +143,7 @@ class AutoLamellaTask(ABC):
         self.lamella.task.end_timestamp = datetime.timestamp(datetime.now())
         self.log_status_message("FINISHED")
         self.update_status_ui("Finished")
-        self.lamella.tasks[self.task_name] = deepcopy(self.config)
+        self.lamella.task_config[self.task_name] = deepcopy(self.config)
         self.lamella.task_history.append(deepcopy(self.lamella.task))
 
     def log_status_message(self, message: str) -> None:
@@ -755,8 +647,8 @@ class SetupLamellaTask(AutoLamellaTask):
 
         self.log_status_message("SETUP_PATTERNS")
 
-        rough_milling_task_config = self.lamella.tasks[MillRoughTaskConfig.task_name].milling[MILL_ROUGH_KEY]
-        polishing_milling_task_config = self.lamella.tasks[MillPolishingTaskConfig.task_name].milling[MILL_POLISHING_KEY]
+        rough_milling_task_config = self.lamella.task_config[MillRoughTaskConfig.task_name].milling[MILL_ROUGH_KEY]
+        polishing_milling_task_config = self.lamella.task_config[MillPolishingTaskConfig.task_name].milling[MILL_POLISHING_KEY]
         fiducial_task_config = self.config.milling[FIDUCIAL_KEY]
 
         assert rough_milling_task_config.field_of_view == polishing_milling_task_config.field_of_view, \
@@ -858,7 +750,6 @@ def get_task_config(name: str) -> Type[AutoLamellaTaskConfig]:
         raise TaskNotRegisteredError(name)
     return TASK_REGISTRY[name].config_cls  # type: ignore
 
-# Lamella.tasks =  List[AutoLamellaTaskConfig]
 
 TASK_REGISTRY: Dict[str, Type[AutoLamellaTask]] = {
     MillTrenchTaskConfig.task_name: MillTrenchTask,
@@ -872,34 +763,26 @@ TASK_REGISTRY: Dict[str, Type[AutoLamellaTask]] = {
 
 def run_task(microscope: FibsemMicroscope, 
           task_name: str, 
-          lamella: Lamella, 
+          lamella: 'Lamella', 
           parent_ui: Optional[AutoLamellaUI] = None) -> None:
     """Run a specific AutoLamella task."""
     task_cls = TASK_REGISTRY.get(task_name)
     if task_cls is None:
         raise ValueError(f"Task {task_name} is not registered.")
-    
-    task_config = lamella.tasks.get(task_name)
+
+    task_config = lamella.task_config.get(task_name)
     if task_config is None:
         raise ValueError(f"Task configuration for {task_name} not found in lamella tasks.")
 
-    # def _progress_update(evt):
-    #     print(f"PROGRESS UPDATE: {evt.path}")
-    #     if isinstance(evt.args[0], AutoLamellaTaskState):
-    #         print(f"STATE UPDATE: {evt.args[0]}")
-    #         print("-" * 20)
-    # lamella.events.disconnect()
-    # lamella.events.connect(_progress_update)
-    # lamella.task = None
 
     task = task_cls(microscope=microscope, config=task_config, lamella=lamella, parent_ui=parent_ui)
     task.run()
 
 def run_tasks(microscope: FibsemMicroscope, 
-            experiment: Experiment, 
+            experiment: 'Experiment', 
             task_names: List[str],
             required_lamella: Optional[List[str]] = None,
-            parent_ui: Optional[AutoLamellaUI] = None) -> Experiment:
+            parent_ui: Optional[AutoLamellaUI] = None) -> 'Experiment':
     """Run the specified tasks for all lamellas in the experiment.
     Args:
         microscope (FibsemMicroscope): The microscope instance.
@@ -915,9 +798,22 @@ def run_tasks(microscope: FibsemMicroscope,
             if required_lamella and lamella.name not in required_lamella:
                 logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Not in required lamella list.")
                 continue
-            # if lamella.has_completed_task(task_name):
-            #     logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Already completed.")
+            if lamella.has_completed_task(task_name):
+                logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Already completed.")
+                continue
+
+            # # check if this lamella has completed required tasks
+            # if not all(lamella.has_completed_task(req) for req in experiment.workflow["tasks"][task_name].get("requires", [])):
+            #     logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Required tasks not completed.")
             #     continue
+
+            # TODO: how to handle:
+            # - if the task is already completed
+            # - if the task has not completed the required tasks
+            # - if the lamella has a defect
+            # - how to define the workflow and required tasks
+            # - how to mark the workflow as 'completed'
+            # - how to handle supervision: only enabled when parent_ui available
 
             run_task(microscope=microscope,
                      task_name=task_name,
