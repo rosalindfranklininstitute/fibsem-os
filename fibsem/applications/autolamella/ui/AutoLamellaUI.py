@@ -17,7 +17,6 @@ import napari.utils.notifications
 import fibsem
 from fibsem import utils
 from fibsem.constants import DEGREE_SYMBOL
-from fibsem.imaging.spot import run_spot_burn
 from fibsem.microscope import FibsemMicroscope
 from fibsem.milling import get_milling_stages, get_protocol_from_stages
 from fibsem.structures import (
@@ -48,7 +47,6 @@ from qtpy import QtWidgets
 if DETECTION_AVAILABLE: # ml dependencies are option, so we need to check if they are available
     from fibsem.ui.FibsemEmbeddedDetectionWidget import FibsemEmbeddedDetectionUI
 
-from fibsem.applications import autolamella
 from fibsem.applications.autolamella import config as cfg
 from fibsem.applications.autolamella.protocol.validation import (
     FIDUCIAL_KEY,
@@ -1235,6 +1233,9 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
         if self.experiment.positions == []:
             return
 
+        if self.protocol is None:
+            return
+
         if self.WORKFLOW_IS_RUNNING:
             return
         
@@ -1374,6 +1375,8 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
         if self.experiment.positions == []:
             return
 
+        if self.protocol is None:
+            return
         idx = self.comboBox_current_lamella.currentIndex()
         lamella: Lamella = self.experiment.positions[idx]
 
@@ -1437,9 +1440,9 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
         self.update_ui()
 
     def cryo_deposition(self):
-        cryo_deposition_widget = FibsemCryoDepositionWidget(
-            self.microscope, self.settings
-        )
+        if self.microscope is None:
+            return
+        cryo_deposition_widget = FibsemCryoDepositionWidget(self.microscope)
         cryo_deposition_widget.exec_()
 
     def set_instructions_msg(
@@ -1477,7 +1480,6 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
 
     def push_interaction_button(self):
         """Handle the user interaction with the workflow."""
-        logging.debug("Sender: {}".format(self.sender().objectName()))
 
         # positve / negative response
         self.USER_RESPONSE = bool(self.sender() == self.pushButton_yes)
@@ -1497,7 +1499,7 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
 
     def _add_lamella_from_odemis(self):
 
-        filename = fui.path = fui.open_existing_directory_dialog(
+        filename = fui.open_existing_directory_dialog(
             msg="Select Odemis Project Directory",
             path=self.experiment.path,
             parent=self,
@@ -1595,6 +1597,10 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
             logging.warning("No lamella is selected, cannot remove.")
             return
         
+        if self.experiment is None or self.experiment.positions == []:
+            logging.warning("No lamella in the experiment, cannot remove.")
+            return
+
         pos = self.experiment.positions[idx]
         ret = fui.message_box_ui(
             title="Remove Lamella",
@@ -1789,11 +1795,18 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
         self, idx: int, method: AutoLamellaMethod, stage: AutoLamellaStage
     ):
 
+        if self.protocol is None:
+            raise ValueError("No protocol loaded. Please load a protocol first.")
+        if self.experiment is None:
+            raise ValueError("No experiment loaded. Please load an experiment first.")
+        if self.experiment.positions == []:
+            raise ValueError("No lamella positions available. Please add a lamella first.")
+
         if stage not in PREPARTION_WORKFLOW_STAGES:
             return
-        
+
         stages = deepcopy(self.milling_widget.get_milling_stages())
-        
+
         # TRENCH SETUP
         if method.is_trench:
             self.experiment.positions[idx].protocol[TRENCH_KEY] = get_protocol_from_stages(stages)
