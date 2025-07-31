@@ -12,9 +12,6 @@ from fibsem import acquire
 from fibsem import config as fcfg
 from fibsem.microscope import FibsemMicroscope
 from fibsem.milling.base import FibsemMillingStage
-from fibsem.milling.core import (
-    finish_milling,
-)
 from fibsem.structures import BeamType, FibsemImage, ImageSettings, MillingAlignment
 from fibsem.utils import current_timestamp_v3
 
@@ -98,6 +95,10 @@ class FibsemMillingTaskConfig:
             stages=stages,
         )
 
+    @property
+    def estimated_time(self) -> float:
+        """Estimate the total milling time for a list of milling stages"""
+        return sum([stage.estimated_time for stage in self.stages])
 
 @dataclass
 class FibsemMillingTask:
