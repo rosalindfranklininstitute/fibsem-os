@@ -555,8 +555,8 @@ def draw_milling_patterns(
         # Get all shapes from the pattern
         try:
             shapes = pattern.define()
-        except Exception as e:
-            logging.debug(f"Failed to define pattern {pattern.name}: {e}")
+        except Exception:
+            logging.error("Failed to define pattern %s", pattern.name, exc_info=True)
             continue
 
         label = f"{stage.name}"
@@ -606,12 +606,18 @@ def draw_milling_patterns(
                         zorder=zorder,
                     )
                 else:
-                    logging.debug(f"Unsupported shape type {type(shape)}, skipping")
+                    logging.info(
+                        "Unsupported shape type %s, skipping", str(type(shape))
+                    )
                     continue
                 if handle is not None:
                     handles.append(handle)
-            except Exception as e:
-                logging.debug(f"Failed to create patch for shape {type(shape)}: {e}")
+            except Exception:
+                logging.warning(
+                    "Failed to create patch for shape %s",
+                    str(type(shape)),
+                    exc_info=True,
+                )
                 continue
 
     # Detect and highlight overlaps if requested
