@@ -26,7 +26,7 @@ def _check_for_abort(parent_ui: Optional[AutoLamellaUI], msg: str = "Workflow ab
     if parent_ui is None:
         return False
 
-    if parent_ui.STOP_WORKFLOW:
+    if parent_ui._workflow_stop_event.is_set():
         raise InterruptedError(msg)
     return False
 
