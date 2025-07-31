@@ -570,6 +570,8 @@ def create_new_experiment(path: Path, name: str, method: str = "autolamella-on-g
 
     return experiment
 
+@evented
+@dataclass
 class Experiment: 
     def __init__(self, path: Path, 
                  name: str = cfg.EXPERIMENT_NAME, 
@@ -584,6 +586,7 @@ class Experiment:
         self.landing_positions: List[FibsemStagePosition] = []
 
         self.method: AutoLamellaMethod = get_autolamella_method(method)
+        self.task_protocol: AutoLamellaTaskProtocol
 
     def to_dict(self) -> dict:
 
@@ -598,7 +601,7 @@ class Experiment:
         }
 
         return state_dict
-    
+
     @classmethod
     def from_dict(cls, ddict: dict) -> 'Experiment':
 
@@ -885,6 +888,9 @@ class Experiment:
         self.positions.append(deepcopy(lamella))
         logging.info(f"Added lamella {lamella.name} to experiment {self.name}")
 
+
+###### TASK REFACTORING ##########
+
     def add_new_lamella(self, state: LamellaState,
                         task_config: Dict[str, AutoLamellaTaskConfig],
                         name: Optional[str] = None) -> None:
@@ -910,6 +916,48 @@ class Experiment:
 
         self.add_lamella(lamella)
 
+    def task_history_dataframe(self) -> pd.DataFrame:
+        """Create a dataframe with the history of all tasks."""
+        history: List[dict[Any, Any]] = []
+        for pos in self.positions:
+            name = pos.name
+
+            for task in pos.task_history:
+                ddict = {
+                    "lamella_name": name,
+                    "lamella_id": task.lamella_id,
+                    "task_name": task.name,
+                    "task_id": task.task_id,
+                    "start_timestamp": task.start_timestamp,
+                    "end_timestamp": task.end_timestamp,
+                    "duration": task.duration,
+                }
+                history.append(deepcopy(ddict))
+
+        df_task_history = pd.DataFrame.from_dict(history)
+        return df_task_history
+    
+    def experiment_summary_dataframe(self) -> pd.DataFrame:
+        """Create a summary dataframe of the experiment."""
+        edict = []
+        for p in self.positions:
+            ddict = {
+                "experiment_name": self.name,
+                "experiment_path": self.path,
+                "experiment_created_at": self.created_at,
+                "experiment_id": self._id,
+                "lamella_name": p.name,
+                "lamella_id": p._id,
+                "last_completed": p.last_completed_task.name if p.last_completed_task else None,
+                "last_completed_at": p.last_completed_task.completed_at if p.last_completed_task else None,
+                # "lamella_completed": p.finished,
+                # "lamella_defect": p.is_failure,
+            }
+            edict.append(deepcopy(ddict))
+
+        df = pd.DataFrame(edict)
+
+        return df
 
 ########## PROTOCOL V2 ##########
 

@@ -148,6 +148,7 @@ class AutoLamellaTask(ABC):
 
     def log_status_message(self, message: str) -> None:
         logging.debug({"msg": "status", 
+                       "timestamp": datetime.now().isoformat(),
                        "lamella": self.lamella.name,
                        "lamella_id": self.lamella._id,
                        "task_id": self.task_id,
@@ -254,7 +255,6 @@ class MillUndercutTask(AutoLamellaTask):
     config_cls: ClassVar[Type[MillUndercutTaskConfig]] = MillUndercutTaskConfig
 
     def _run(self) -> None:
-
 
         # bookkeeping
         validate = self.config.supervise
@@ -798,14 +798,17 @@ def run_tasks(microscope: FibsemMicroscope,
             if required_lamella and lamella.name not in required_lamella:
                 logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Not in required lamella list.")
                 continue
+
+            # check if this lamella has already completed the task
             if lamella.has_completed_task(task_name):
                 logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Already completed.")
                 continue
 
-            # # check if this lamella has completed required tasks
-            # if not all(lamella.has_completed_task(req) for req in experiment.workflow["tasks"][task_name].get("requires", [])):
-            #     logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Required tasks not completed.")
-            #     continue
+            # check if this lamella has completed required tasks
+            task_requires = experiment.task_protocol.workflow_config.requires(task_name)
+            if task_requires and not all(lamella.has_completed_task(req) for req in task_requires):
+                logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Required tasks {task_requires} not completed.")
+                continue
 
             # TODO: how to handle:
             # - if the task is already completed
