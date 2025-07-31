@@ -335,7 +335,7 @@ class FibsemMicroscope(ABC):
         pass
 
     @abstractmethod
-    def run_milling(self, milling_current: float, asynch: bool) -> None:
+    def run_milling(self, milling_current: float, milling_voltage: float, asynch: bool = False) -> None:
         pass
 
     @abstractmethod
