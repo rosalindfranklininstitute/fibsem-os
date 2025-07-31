@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import logging
 import time
 import uuid
@@ -172,7 +173,7 @@ class FibsemMillingTask:
                         asynch=False,
                         parent_ui=self.parent_ui,
                     )
-
+                    # TODO: pass task as parent into strategy.run()?, allow logging from strategy?
                     # performance logging
                     msgd = {"msg": "milling_task",
                             "task_id": self.task_id,
@@ -180,7 +181,8 @@ class FibsemMillingTask:
                             "idx": idx,
                             "stage": stage.to_dict(),
                             "start_time": start_time,
-                            "end_time": time.time()}
+                            "end_time": time.time(),
+                            "timestamp": datetime.now().isoformat()}
                     logging.debug(f"{msgd}")
 
                     # optionally acquire images after milling
@@ -197,8 +199,7 @@ class FibsemMillingTask:
         except Exception as e:
             logging.error(e)
         finally:
-            finish_milling(
-                microscope=self.microscope,
+            self.microscope.finish_milling(
                 imaging_current=self.microscope.system.ion.beam.beam_current,
                 imaging_voltage=self.microscope.system.ion.beam.voltage,
             )

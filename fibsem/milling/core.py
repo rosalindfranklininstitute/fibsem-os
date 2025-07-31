@@ -64,6 +64,7 @@ def run_milling(
         milling_current (float, optional): ion beam milling current. Defaults to None.
         asynch (bool, optional): flag to run milling asynchronously. Defaults to False.
     """
+    logging.warning("DEPRECATED: run_milling is deprecated, use microscope.run_milling instead.")
     microscope.run_milling(milling_current, milling_voltage, asynch)
 
 def finish_milling(
@@ -77,9 +78,8 @@ def finish_milling(
         imaging_voltage: Imaging Voltage. Defaults to 30e3.
     """
     # restore imaging current
-    logging.info(f"Changing to Imaging Current: {imaging_current:.2e}")
+    logging.warning("DEPRECATED: finish_milling is deprecated, use microscope.finish_milling instead.")
     microscope.finish_milling(imaging_current=imaging_current, imaging_voltage=imaging_voltage)
-    logging.info("Finished Ion Beam Milling.")
 
 def draw_patterns(microscope: FibsemMicroscope, patterns: List[FibsemPatternSettings]) -> None:
     logging.warning("DEPRECATED: draw_patterns is deprecated, use microscope.draw_patterns instead.")
