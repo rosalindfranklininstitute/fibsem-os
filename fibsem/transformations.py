@@ -96,7 +96,7 @@ def move_to_milling_angle(
     """Move the stage to the milling angle, based on the current pretilt and column tilt."""
 
     if rotation is None:
-        rotation = microscope.system.stage.rotation_reference
+        rotation = np.radians(microscope.system.stage.rotation_reference)
 
     # calculate the stage tilt from the milling angle
     stage_tilt = get_stage_tilt_from_milling_angle(microscope, milling_angle)
