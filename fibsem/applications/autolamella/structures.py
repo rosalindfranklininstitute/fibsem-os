@@ -246,16 +246,46 @@ class AutoLamellaWorkflowConfig:
             description=data.get("description", ""),
             tasks=tasks
         )
-    
+
     @property
     def workflow(self) -> List[str]:
         return [task.name for task in self.tasks]
+
+    @property
+    def required_tasks(self) -> List[str]:
+        """Get the list of required tasks for this workflow."""
+        return [task.name for task in self.tasks if task.required]
 
     def requires(self, task_name: str) -> List[str]:
         for task in self.tasks:
             if task.name == task_name:
                 return task.requires
         return []
+
+    def get_completed_tasks(self, lamella: 'Lamella') -> List[str]:
+        """Get the list of completed tasks for a given lamella."""
+        completed_tasks = []
+        for task in lamella.task_history:
+            if task.name in self.workflow:
+                completed_tasks.append(task.name)
+        return completed_tasks
+
+    def get_remaining_tasks(self, lamella: 'Lamella') -> List[str]:
+        """Get the list of remaining tasks for a given lamella."""
+        remaining_tasks = []
+        completed_tasks = self.get_completed_tasks(lamella)
+        for task in self.required_tasks:
+            if task not in completed_tasks:
+                remaining_tasks.append(task)
+        return remaining_tasks
+
+    def is_completed(self, lamella: 'Lamella') -> bool:
+        """Check if all required tasks for the workflow are completed."""
+        completed_tasks = self.get_completed_tasks(lamella)
+        for task in self.required_tasks:
+            if task not in completed_tasks:
+                return False
+        return True
 
 @evented
 @dataclass
@@ -950,8 +980,8 @@ class Experiment:
                 "lamella_id": p._id,
                 "last_completed": p.last_completed_task.name if p.last_completed_task else None,
                 "last_completed_at": p.last_completed_task.completed_at if p.last_completed_task else None,
-                # "lamella_completed": p.finished,
-                # "lamella_defect": p.is_failure,
+                "is_completed": self.task_protocol.workflow_config.is_completed(p),
+                "is_failure": p.is_failure,
             }
             edict.append(deepcopy(ddict))
 
