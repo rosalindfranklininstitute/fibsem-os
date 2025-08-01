@@ -251,7 +251,7 @@ def convert_bitmap_pattern_to_napari_image(
 
     return img_array, {
         "affine": create_affine_matrix(
-            rotation=pattern_settings.rotation,
+            rotation=-pattern_settings.rotation,
             centre=(
                 img_array.shape[0] / 2,
                 img_array.shape[1] / 2,
