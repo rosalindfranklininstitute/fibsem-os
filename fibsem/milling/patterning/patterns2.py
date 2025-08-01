@@ -717,7 +717,7 @@ class ArrayPattern(BasePattern[FibsemRectangleSettings]):
         n_rows = int(self.n_rows)
         pitch_vertical = self.pitch_vertical
         pitch_horizontal = self.pitch_horizontal
-        rotation = self.rotation
+        rotation = self.rotation * constants.DEGREES_TO_RADIANS
         passes = self.passes
         scan_direction = self.scan_direction
         passes = int(passes)
