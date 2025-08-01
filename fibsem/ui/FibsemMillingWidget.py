@@ -687,7 +687,12 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
             # default None
             val = getattr(pattern, key, None)
 
-            if isinstance(val, (int, float)):
+            if isinstance(val, bool):
+                control_widget = QtWidgets.QCheckBox()
+                control_widget.setChecked(bool(val))
+                control_widget.stateChanged.connect(self.redraw_patterns)
+
+            elif isinstance(val, (int, float)):
                 # limits
                 min_val = -1000 # if key in LINE_KEYS else 0 # why not?
 
@@ -723,15 +728,11 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
                 control_widget.setCurrentText(val)
                 control_widget.currentIndexChanged.connect(self.redraw_patterns)
 
-            elif isinstance(val, bool):
-                control_widget = QtWidgets.QCheckBox()
-                control_widget.setChecked(bool(val))
-                control_widget.stateChanged.connect(self.redraw_patterns)
-            
             elif isinstance(val, str):
                 control_widget = QtWidgets.QLineEdit()
                 control_widget.setText(val)
                 control_widget.editingFinished.connect(self.redraw_patterns)
+
             else:
                 logging.error("'%s' of %s cannot be displayed by UI", key, pattern.name)
                 continue
