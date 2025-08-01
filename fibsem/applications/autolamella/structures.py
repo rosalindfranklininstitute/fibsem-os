@@ -166,6 +166,8 @@ class AutoLamellaTaskState:
     @classmethod
     def from_dict(cls, data: dict) -> 'AutoLamellaTaskState':
         """Create a task state from a dictionary."""
+        if data is None:
+            return cls()
         return cls(**data)
 
 @dataclass
@@ -224,6 +226,8 @@ class AutoLamellaTaskDescription:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AutoLamellaTaskDescription':
+        if data is None:
+            return cls(name="", supervise=False, required=False, requires=[])
         return cls(**data)
 
 @evented
@@ -332,7 +336,7 @@ class DefectState:
 @dataclass
 class Lamella:
     path: Path
-    state: LamellaState                                                     # TODO: deprecate, use MicroscopeState instead
+    state: LamellaState                                                     # TODO: deprecate, use poses instead
     number: int                                                             # TODO: deprecate, use petname instead
     petname: str
     protocol: dict                                                          # TODO: deprecate, use task_config instead
@@ -340,16 +344,15 @@ class Lamella:
     failure_note: str = ""                                                  # TODO: deprecate, use DefectState instead
     failure_timestamp: float = None                                         # TODO: deprecate, use DefectState instead
     alignment_area: FibsemRectangle = field(default_factory=FibsemRectangle)
-    landing_selected: bool = False                                          # TODO: deprecate, use poses instead
-    landing_state: MicroscopeState = field(default_factory=MicroscopeState) # TODO: deprecate, use poses instead
     history: List[LamellaState] = None                                      # TODO: deprecate, use task_history instead
     milling_workflows: Dict[str, List[FibsemMillingStage]] = None           # TODO: deprecate, use task_config instead
     states: Dict[AutoLamellaStage, LamellaState] = None                     # TODO: deprecate, use task_history instead
     _id: str = str(uuid.uuid4())
     task_config: Dict[str, 'AutoLamellaTaskConfig'] = field(default_factory=dict)
-    poses: Dict[str, FibsemStagePosition] = field(default_factory=dict)  # QUERY: these should be state not position?
+    poses: Dict[str, MicroscopeState] = field(default_factory=dict)
     task: AutoLamellaTaskState = field(default_factory=AutoLamellaTaskState)
     task_history: List['AutoLamellaTaskState'] = field(default_factory=list)
+    defect: DefectState = field(default_factory=DefectState)
 
     def __post_init__(self):
         # only make the dir, if the base path is actually set, 
@@ -361,7 +364,7 @@ class Lamella:
             self.protocol = {}
 
         # set imaging paths to be the lamella path unless already set
-        for k, v in self.protocol.items(): # Dict[str, List[Dict]]
+        for k, v in self.protocol.items():  # Dict[str, List[Dict]]
             for stage in v:
                 if stage.get("imaging", {}).get("path", None) is None:
                     stage["imaging"]["path"] = self.path
@@ -436,6 +439,32 @@ class Lamella:
             return self.task_history[-1]
         return None
 
+    @property
+    def landing_selected(self) -> bool:
+        return self.landing_pose is not None
+
+    @property
+    def landing_pose(self) -> Optional[MicroscopeState]:
+        return self.poses.get("LANDING", None)
+
+    @landing_pose.setter
+    def landing_pose(self, value: MicroscopeState):
+        """Set the landing pose for the lamella."""
+        if not isinstance(value, MicroscopeState):
+            raise TypeError("Landing pose must be a MicroscopeState instance.")
+        self.poses["LANDING"] = value
+
+    @property
+    def milling_pose(self) -> Optional[MicroscopeState]:
+        return self.poses.get("MILLING", None)
+
+    @milling_pose.setter
+    def milling_pose(self, value: MicroscopeState):
+        """Set the milling pose for the lamella."""
+        if not isinstance(value, MicroscopeState):
+            raise TypeError("Milling pose must be a MicroscopeState instance.")
+        self.poses["MILLING"] = value
+
     def to_dict(self):
         return {
             "petname": self.petname,
@@ -448,14 +477,13 @@ class Lamella:
             "is_failure": self.is_failure,
             "failure_note": self.failure_note,
             "failure_timestamp": self.failure_timestamp,
-            "landing_state": self.landing_state.to_dict(),
-            "landing_selected": self.landing_selected,
             "id": str(self._id),
             "states": {k.name: v.to_dict() for k, v in self.states.items()},
             "poses": {k: v.to_dict() for k, v in self.poses.items()},
             "task_config": {k: v.to_dict() for k, v in self.task_config.items()},
             "task": self.task.to_dict() if self.task is not None else None,
             "task_history": [task.to_dict() for task in self.task_history],
+            "defect": self.defect.to_dict() if self.defect is not None else None,
         }
 
     @property
@@ -517,14 +545,13 @@ class Lamella:
             is_failure=data.get("is_failure", data.get("is_failure", False)),
             failure_note=data.get("failure_note", ""),
             failure_timestamp=data.get("failure_timestamp", None),
-            landing_state = MicroscopeState.from_dict(data.get("landing_state", MicroscopeState().to_dict())), # tmp solution
-            landing_selected = bool(data.get("landing_selected", False)),
             _id=data.get("id", None),
             states=states,
-            poses = {k: FibsemStagePosition.from_dict(v) for k, v in data.get("poses", {}).items()},
+            poses = {k: MicroscopeState.from_dict(v) for k, v in data.get("poses", {}).items()},
             task_config=load_task_config(data.get("task_config", {})),
             task=AutoLamellaTaskState.from_dict(data.get("task", {})),
             task_history=[AutoLamellaTaskState.from_dict(task) for task in data.get("task_history", [])],
+            defect=DefectState.from_dict(data.get("defect", {})),
         )
 
     def load_reference_image(self, fname) -> FibsemImage:
@@ -694,18 +721,6 @@ class Experiment:
                 "failure_note": lamella.failure_note,
                 "failure_timestamp": lamella.failure_timestamp,
             }
-
-            if self.method.is_liftout:
-                ldict.update({
-                    "landing.x": lamella.landing_state.stage_position.x,
-                    "landing.y": lamella.landing_state.stage_position.y,
-                    "landing.z": lamella.landing_state.stage_position.z,
-                    "landing.r": lamella.landing_state.stage_position.r,
-                    "landing.t": lamella.landing_state.stage_position.t,
-                    "landing.coordinate_system": lamella.landing_state.stage_position.coordinate_system,
-                    "landing_selected": lamella.landing_selected,
-                    "history: ": len(lamella.history),}
-                )
 
             exp_data.append(ldict)
 

@@ -419,15 +419,17 @@ class MillRoughTask(AutoLamellaTask):
         self.log_status_message("MOVE_TO_LAMELLA")
         self.update_status_ui("Moving to Lamella Position...")
 
-        milling_position = self.lamella.poses["MILLING"] or self.lamella.stage_position 
+        if self.lamella.milling_pose is None or self.lamella.milling_pose.stage_position is None:
+            raise ValueError(f"Milling pose for {self.lamella.name} is not set. Please set the milling pose before milling the lamella.")
+        milling_position = self.lamella.milling_pose.stage_position
+
         if self.microscope.get_stage_orientation(milling_position) != "MILLING":
             logging.warning(f"Stage position {milling_position} is not in MILLING orientation...")
             # QUERY: need to think how to handle this. need a defined position for rough milling as 'state' can be arbitarily changed. 
             # milling_position = self.microscope.get_target_position(
             #     stage_position=milling_position, target_orientation="MILLING")
             # self.lamella.state.microscope_state.stage_position = milling_position
-        # self.microscope.set_microscope_state(self.lamella.state.microscope_state)
-        self.microscope.safe_absolute_stage_movement(milling_position)
+        self.microscope.set_microscope_state(self.lamella.milling_pose)
 
         # TODO: how to ensure this is always the correct position/state?
 
@@ -493,15 +495,17 @@ class MillPolishingTask(AutoLamellaTask):
         self.log_status_message("MOVE_TO_LAMELLA")
         self.update_status_ui("Moving to Lamella Position...")
 
-        milling_position = self.lamella.poses["MILLING"] or self.lamella.stage_position 
+        if self.lamella.milling_pose is None or self.lamella.milling_pose.stage_position is None:
+            raise ValueError(f"Milling pose for {self.lamella.name} is not set. Please set the milling pose before milling the lamella.")
+        milling_position = self.lamella.milling_pose.stage_position
+
         if self.microscope.get_stage_orientation(milling_position) != "MILLING":
             logging.warning(f"Stage position {milling_position} is not in MILLING orientation...")
             # QUERY: need to think how to handle this. need a defined position for rough milling as 'state' can be arbitarily changed. 
             # milling_position = self.microscope.get_target_position(
             #     stage_position=milling_position, target_orientation="MILLING")
             # self.lamella.state.microscope_state.stage_position = milling_position
-        # self.microscope.set_microscope_state(self.lamella.state.microscope_state)
-        self.microscope.safe_absolute_stage_movement(milling_position)
+        self.microscope.set_microscope_state(self.lamella.milling_pose)
 
         # TODO: how to ensure this is always the correct position/state?
 
@@ -643,7 +647,7 @@ class SetupLamellaTask(AutoLamellaTask):
             #                                 checkpoint=protocol.options.checkpoint, 
             #                                 parent_ui=parent_ui, 
             #                                 validate=validate)
-        self.lamella.poses["MILLING"] = self.microscope.get_stage_position()
+        self.lamella.milling_pose = self.microscope.get_microscope_state()
 
         self.log_status_message("SETUP_PATTERNS")
 
@@ -714,7 +718,7 @@ class SetupLamellaTask(AutoLamellaTask):
         )
         set_images_ui(self.parent_ui, reference_images.high_res_eb, reference_images.high_res_ib)
 
-        self.lamella.poses["MILLING"] = self.microscope.get_stage_position()
+        self.lamella.milling_pose = self.microscope.get_microscope_state()
 
 
 class TaskNotRegisteredError(Exception):
