@@ -806,7 +806,7 @@ def draw_bitmap_shape(
     image_resized = image_bmp.resize((w, h))
 
     if not np.isclose(rotation, 0):
-        image_resized = image_resized.rotate(-pattern_settings.rotation, expand=True)
+        image_resized = image_resized.rotate(pattern_settings.rotation, expand=True)
 
     # Create base rectangle shape
     shape = np.asarray(image_resized, dtype=np.float_)
