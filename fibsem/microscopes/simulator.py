@@ -221,7 +221,7 @@ class DemoMicroscope(FibsemMicroscope):
             scanning_mode="full_frame",
             scanning_mode_value = None,
         )
-        self.stage_is_compustage: bool = False
+        self.stage_is_compustage: bool = self.system.sim.get("is_compustage", False)
         self.milling_system = MillingSystem(patterns=[])
         self.imaging_system = ImagingSystem()
 
