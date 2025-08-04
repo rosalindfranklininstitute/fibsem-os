@@ -4,7 +4,7 @@ import os
 import time
 import datetime
 from copy import deepcopy
-from typing import List, Tuple
+from typing import List, Optional, Tuple, TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,6 +19,9 @@ from fibsem.structures import (
     Point,
 )
 
+if TYPE_CHECKING:
+    from fibsem.ui.FibsemMinimapWidget import FibsemMinimapWidget
+
 POSITION_COLOURS = ["lime", "blue", "cyan", "magenta", "hotpink", "yellow", "orange", "red"]
 
 ##### TILED ACQUISITION
@@ -29,7 +32,7 @@ def tiled_image_acquisition(
     tile_size: float,
     overlap: float = 0.0,
     cryo: bool = True,
-    parent_ui=None,
+    parent_ui: Optional[FibsemMinimapWidget]=None,
 ) -> dict: 
     """Tiled image acquisition. Currently only supports square grids with no overlap.
     Args:
@@ -111,9 +114,9 @@ def tiled_image_acquisition(
 
             # stitch image
             arr[i*shape[0]:(i+1)*shape[0], j*shape[1]:(j+1)*shape[1]] = image.data
-            
+
             if parent_ui:
-                n_tiles_acquired+=1
+                n_tiles_acquired += 1
                 parent_ui.tile_acquisition_progress_signal.emit(
                     {
                         "msg": "Tile Collected",
@@ -144,7 +147,7 @@ def tiled_image_acquisition(
     return ddict
 
 # TODO: stitch while collecting
-def stitch_images(images: List[List[FibsemImage]], ddict: dict, parent_ui = None) -> FibsemImage:
+def stitch_images(images: List[List[FibsemImage]], ddict: dict, parent_ui: Optional[FibsemMinimapWidget] = None) -> FibsemImage:
     """Stitch an array (2D) of images together. Assumes images are ordered in a grid with no overlap.
     Args:
         images: The images.
@@ -186,7 +189,7 @@ def tiled_image_acquisition_and_stitch(microscope: FibsemMicroscope,
                                   grid_size: float, 
                                   tile_size: float, 
                                   overlap: int = 0, cryo: bool = True, 
-                                  parent_ui = None) -> FibsemImage:
+                                  parent_ui: Optional[FibsemMinimapWidget] = None) -> FibsemImage:
     """Acquire a tiled image and stitch it together. Currently only supports square grids with no overlap.
     Args:
         microscope: The microscope connection.
@@ -198,7 +201,7 @@ def tiled_image_acquisition_and_stitch(microscope: FibsemMicroscope,
         parent_ui: The parent UI for progress updates.
     Returns:
         The stitched image."""
-    
+
     # add datetime to filename for uniqueness
     filename = image_settings.filename
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
