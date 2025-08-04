@@ -188,7 +188,7 @@ def tiled_image_acquisition_and_stitch(microscope: FibsemMicroscope,
                                   image_settings: ImageSettings, 
                                   grid_size: float, 
                                   tile_size: float, 
-                                  overlap: int = 0, cryo: bool = True, 
+                                  overlap: float = 0, cryo: bool = True, 
                                   parent_ui: Optional[FibsemMinimapWidget] = None) -> FibsemImage:
     """Acquire a tiled image and stitch it together. Currently only supports square grids with no overlap.
     Args:
