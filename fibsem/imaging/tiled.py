@@ -32,7 +32,7 @@ def tiled_image_acquisition(
     tile_size: float,
     overlap: float = 0.0,
     cryo: bool = True,
-    parent_ui: Optional[FibsemMinimapWidget]=None,
+    parent_ui: Optional['FibsemMinimapWidget']=None,
 ) -> dict: 
     """Tiled image acquisition. Currently only supports square grids with no overlap.
     Args:
@@ -147,7 +147,7 @@ def tiled_image_acquisition(
     return ddict
 
 # TODO: stitch while collecting
-def stitch_images(images: List[List[FibsemImage]], ddict: dict, parent_ui: Optional[FibsemMinimapWidget] = None) -> FibsemImage:
+def stitch_images(images: List[List[FibsemImage]], ddict: dict, parent_ui: Optional['FibsemMinimapWidget'] = None) -> FibsemImage:
     """Stitch an array (2D) of images together. Assumes images are ordered in a grid with no overlap.
     Args:
         images: The images.
@@ -189,7 +189,7 @@ def tiled_image_acquisition_and_stitch(microscope: FibsemMicroscope,
                                   grid_size: float, 
                                   tile_size: float, 
                                   overlap: float = 0, cryo: bool = True, 
-                                  parent_ui: Optional[FibsemMinimapWidget] = None) -> FibsemImage:
+                                  parent_ui: Optional['FibsemMinimapWidget'] = None) -> FibsemImage:
     """Acquire a tiled image and stitch it together. Currently only supports square grids with no overlap.
     Args:
         microscope: The microscope connection.
