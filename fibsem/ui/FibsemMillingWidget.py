@@ -479,8 +479,8 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
                 min_val = -1000
 
                 control_widget = QtWidgets.QDoubleSpinBox()
-                control_widget.setDecimals(1)
-                control_widget.setSingleStep(0.001)
+                control_widget.setDecimals(2)
+                control_widget.setSingleStep(0.01)
                 control_widget.setRange(min_val, 1000)
                 control_widget.setValue(0)
                 control_widget.setKeyboardTracking(False)
@@ -698,7 +698,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
 
                 control_widget = QtWidgets.QDoubleSpinBox()
                 control_widget.setDecimals(2)
-                control_widget.setSingleStep(0.001)
+                control_widget.setSingleStep(0.01)
                 control_widget.setRange(min_val, 1000)
                 control_widget.setValue(0)
                 control_widget.setKeyboardTracking(False)
