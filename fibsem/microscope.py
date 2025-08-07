@@ -1060,6 +1060,18 @@ class FibsemMicroscope(ABC):
         )
         return np.degrees(milling_angle)
 
+    def is_close_to_milling_angle(self, milling_angle: float, atol: float = 2.0) -> bool:
+        """Check if the current milling angle is close to the specified milling angle.
+        Args:
+            milling_angle (float): The target milling angle in degrees.
+            atol (float): The absolute tolerance for the comparison.
+        Returns:
+            bool: True if the current milling angle is close to the specified milling angle, False otherwise
+        """
+        current_milling_angle = self.get_current_milling_angle() # degrees
+
+        return bool(np.isclose(current_milling_angle, milling_angle, atol=atol))
+
     @property
     def current_grid(self) -> str:
         return "None"
