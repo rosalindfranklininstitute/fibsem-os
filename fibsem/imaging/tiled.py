@@ -1,13 +1,14 @@
 
+import datetime
 import logging
 import os
 import time
-import datetime
 from copy import deepcopy
-from typing import List, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.figure import Figure
 
 from fibsem import acquire, conversions
 from fibsem.microscope import FibsemMicroscope
@@ -303,16 +304,18 @@ def reproject_stage_positions_onto_image(
     return points
 
 def plot_stage_positions_on_image(
-        image: FibsemImage, 
-        positions: List[FibsemStagePosition], 
-        show: bool = False, 
-        bound: bool= True) -> plt.Figure:
+        image: FibsemImage,
+        positions: List[FibsemStagePosition],
+        show: bool = False,
+        bound: bool = True,
+        color: Optional[str] = None) -> Figure:
     """Plot stage positions reprojected on an image as matplotlib figure. Assumes image is flat to beam.
     Args:
         image: The image.
         positions: The positions.
         show: Whether to show the plot.
         bound: Whether to only plot points inside the image.
+        color: The color of the points. (None -> default colour cycle)
     Returns:
         The matplotlib figure."""
     from fibsem.ui.napari.utilities import is_inside_image_bounds
@@ -327,10 +330,13 @@ def plot_stage_positions_on_image(
     for i, pt in enumerate(points):
 
         # if points outside image, don't plot
-        if bound and not is_inside_image_bounds([pt.y, pt.x], image.data.shape):
-            continue     
+        if bound and not is_inside_image_bounds((pt.y, pt.x), (image.data.shape[0], image.data.shape[1])):
+            continue
 
-        c = POSITION_COLOURS[i%len(POSITION_COLOURS)]
+        if color is None:
+            c = POSITION_COLOURS[i%len(POSITION_COLOURS)]
+        else:
+            c = color
         plt.plot(pt.x, pt.y, ms=20, c=c, marker="+", markeredgewidth=2, label=f"{pt.name}")
         # draw position name next to point
         plt.text(pt.x-225, pt.y-50, pt.name, fontsize=14, color=c, alpha=0.75)

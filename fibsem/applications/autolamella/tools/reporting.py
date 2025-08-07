@@ -5,9 +5,10 @@ import os
 from copy import deepcopy
 from datetime import datetime
 from pprint import pprint
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -36,7 +37,6 @@ from fibsem.applications.autolamella.protocol.validation import (
     MICROEXPANSION_KEY,
     MILL_POLISHING_KEY,
     MILL_ROUGH_KEY,
-    convert_old_milling_protocol_to_new_protocol,
 )
 from fibsem.applications.autolamella.structures import (
     AutoLamellaMethod,
@@ -81,20 +81,20 @@ class PDFReportGenerator:
             spaceAfter=20
         ))
 
-    def add_title(self, title, subtitle=None):
+    def add_title(self, title: str, subtitle: Optional[str] = None):
         """Add a title and optional subtitle to the document"""
         self.story.append(Paragraph(title, self.styles['CustomTitle']))
         if subtitle:
             self.story.append(Paragraph(subtitle, self.styles['Subtitle']))
         self.story.append(Spacer(1, 20))
 
-    def add_heading(self, text, level=2):
+    def add_heading(self, text: str, level: int = 2):
         """Add a heading with specified level"""
         style = self.styles[f'Heading{level}']
         self.story.append(Paragraph(text, style))
         self.story.append(Spacer(1, 12))
 
-    def add_paragraph(self, text):
+    def add_paragraph(self, text: str):
         """Add a paragraph of text"""
         self.story.append(Paragraph(text, self.styles['Normal']))
         self.story.append(Spacer(1, 12))
@@ -109,7 +109,7 @@ class PDFReportGenerator:
         self.story.append(img)
         self.story.append(Spacer(1, 20))
 
-    def add_dataframe(self, df, title=None, includes_totals=False):
+    def add_dataframe(self, df: pd.DataFrame, title: Optional[str] = None, includes_totals: bool = False):
         """Add a pandas DataFrame as a table"""
         if title:
             self.add_heading(title, 3)
@@ -161,21 +161,21 @@ class PDFReportGenerator:
         self.story.append(Spacer(1, 20))
         plt.close(fig)
 
-    def add_mpl_figure(self, fig):
+    def add_mpl_figure(self, fig: Figure) -> None:
         fig.savefig('temp.png', format='png', bbox_inches='tight', dpi=300)
         self.story.append(Image('temp.png'))
 
-    def add_plotly_figure(self, fig, title=None, width=6.5*inch, height=4*inch):
+    def add_plotly_figure(self, fig: go.Figure, title=None, width=6.5*inch, height=4*inch) -> None:
         """Add a Plotly figure to the PDF"""
         if title:
             self.add_heading(title, 3)
-        
+
         # Convert Plotly figure to static image
         img_bytes = fig.to_image(format="png", width=900, height=500, scale=2)
-        
+
         # Create BytesIO object
         img_buffer = io.BytesIO(img_bytes)
-        
+
         # Add image to story
         img = Image(img_buffer, width=width, height=height)
         self.story.append(img)
@@ -185,8 +185,8 @@ class PDFReportGenerator:
         """Generate the PDF document"""
         self.doc.build(self.story)
 
-def plot_lamella_milling_workflow(p: Lamella) -> plt.Figure:
-    
+def plot_lamella_milling_workflow(p: Lamella) -> Optional[Figure]:
+
     # DRAW MILLING PATTERNS
     milling_workflows = [MILL_ROUGH_KEY, MILL_POLISHING_KEY, MICROEXPANSION_KEY, FIDUCIAL_KEY]
     milling_stages = []
@@ -212,7 +212,7 @@ def plot_lamella_summary(p: Lamella,
                          method: AutoLamellaMethod = AutoLamellaMethod.ON_GRID, 
                          show_title: bool = False, 
                          figsize: Tuple[int, int] = (30, 5), 
-                         show: bool = False) -> plt.Figure:
+                         show: bool = False) -> Optional[Figure]:
     """Plot the final images for each stage of the lamella workflow."""
 
     # get completed stages
@@ -416,7 +416,7 @@ def generate_report_timeline(df: pd.DataFrame):
         # size = "duration", size_max=20)
     return fig_timeline
 
-def generate_interaction_timeline(df: pd.DataFrame) -> go.Figure:
+def generate_interaction_timeline(df: pd.DataFrame) -> Optional[go.Figure]:
 
     if len(df) == 0:
         return None
@@ -469,10 +469,6 @@ def generate_duration_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, go.Figure]:
     # # convert timestamp to datetime, aus timezone
     # df_lamella.failure_timestamp = pd.to_datetime(df_lamella.failure_timestamp, unit="s")
     # st.dataframe(df_lamella)
-
-
-def generate_experiment_summary(df: pd.DataFrame) -> go.Figure:
-    pass
 
 
 def generate_report_data(experiment: Experiment, encoding: str = "cp1252") -> dict:
@@ -587,7 +583,7 @@ def generate_report(experiment: Experiment,
 
 def generate_final_overview_image(exp: Experiment, 
                                   image: FibsemImage, 
-                                  state: AutoLamellaStage = AutoLamellaStage.PositionReady) -> plt.Figure:
+                                  state: AutoLamellaStage = AutoLamellaStage.PositionReady) -> Figure:
     """Generate an overview image with all the final lamellae positions.
     Args:
         exp (Experiment): The experiment to plot.
@@ -615,14 +611,15 @@ def generate_final_overview_image(exp: Experiment,
 
 def save_final_overview_image(exp: Experiment, 
                         image: FibsemImage, 
-                        output_path: str) -> None:
+                        output_path: str) -> Figure:
     """Save the final overview image with all the final lamellae positions.
     Args: 
         exp (Experiment): The experiment to plot.
         image (FibsemImage): The overview image.
         output_path (str): The path to save the image to.
     Returns:
-        None
+        plt.Figure: The figure with the overview image and the positions.
+    Note: The figure is saved with a dpi of 300.
     """
 
     fig = generate_final_overview_image(exp, image)
