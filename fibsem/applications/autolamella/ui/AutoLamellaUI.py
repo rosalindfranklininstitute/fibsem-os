@@ -1386,7 +1386,7 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
         logging.info(f"Updating Lamella Pattern for {lamella.info}")
 
         # update the trench point
-        self._update_milling_protocol(idx=idx, method=self.protocol.method, stage=lamella.workflow)
+        self._update_milling_protocol(idx=idx)
 
         self.experiment.save()
 
@@ -1687,13 +1687,24 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
     def save_lamella_ui(self):
         # triggered when save button is pressed
 
+        if self.microscope is None:
+            return
+        if self.protocol is None:
+            return
+        if self.experiment is None:
+            return
         if self.experiment.positions == []:
             return
+        if self.milling_widget is None:
+            return
+        if self.image_widget is None or self.image_widget.ib_image is None:
+            return
 
+        # toggle between saving position and marking as ready
         idx = self.comboBox_current_lamella.currentIndex()
-        # TOGGLE BETWEEN READY AND SETUP
-
-        method = self.protocol.method
+        if idx == -1:
+            logging.warning("No lamella is selected, cannot save.")
+            return
 
         lamella: Lamella = self.experiment.positions[idx]
         from fibsem.applications.autolamella.workflows.core import (
@@ -1707,12 +1718,12 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
         # we need to be at the lamella position to save, check we are...
         # usually this is required when selected positions from minimap.
         # TODO: change how we do this, so that this is not required
+        # TODO: remove this, we should let the user edit the milling patterns whenever, and then display the ref image separately
+        # need to de-sync the position/state/milling patterns so they can be set async
         current_position = self.microscope.get_stage_position()
 
         if (
-            not lamella.state.microscope_state.stage_position.is_close(
-                current_position, 1e-6
-            )
+            not lamella.stage_position.is_close(current_position, 1e-6)
             and lamella.workflow is AutoLamellaStage.Created
         ):
             ret = fui.message_box_ui(
@@ -1725,75 +1736,55 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
 
             if ret is True:
                 # move to lamella position
-                self.movement_widget.move_to_position(
-                    lamella.state.microscope_state.stage_position
-                )
+                self.microscope.safe_absolute_stage_movement(lamella.stage_position) # need to wait for this to complete
 
-        # end of stage update
+        # Don't save state for PositionReady to preserve existing position
+        save_state = lamella.workflow is not AutoLamellaStage.PositionReady
         self.experiment = end_of_stage_update(
             microscope=self.microscope,
             experiment=self.experiment,
             lamella=lamella,
             parent_ui=self,
-            save_state=True,
-            update_ui=False
+            save_state=save_state,
+            update_ui=False,
         )
 
         if lamella.workflow is AutoLamellaStage.Created:
             # start of stage update
             self.experiment.positions[idx] = start_of_stage_update(
-                microscope=self.microscope,
-                lamella=lamella,
-                next_stage=AutoLamellaStage.PositionReady,
-                parent_ui=self,
-                restore_state=False,
-                update_ui=False
+                microscope=self.microscope, lamella=lamella, next_stage=AutoLamellaStage.PositionReady,
+                parent_ui=self, restore_state=False, update_ui=False
             )
 
             # update the protocol / point
-            self._update_milling_protocol(idx, method, AutoLamellaStage.PositionReady)
+            self._update_milling_protocol(idx)
 
-            # get current ib image, save as reference
-            fname = os.path.join(
-                self.experiment.positions[idx].path,
-                f"ref_{self.experiment.positions[idx].status}",
-            )
+            # get current fib image, save as reference
+            fname = os.path.join(self.experiment.positions[idx].path, f"ref_{self.experiment.positions[idx].status}")
             self.image_widget.ib_image.save(fname)
-            self.milling_widget.CAN_MOVE_PATTERN = False
-            self.milling_widget.setEnabled(False)
 
             self.experiment = end_of_stage_update(
-                microscope=self.microscope,
-                experiment=self.experiment,
-                lamella=lamella,
-                parent_ui=self,
-                save_state=True,
-                update_ui=False
+                microscope=self.microscope, experiment=self.experiment,
+                lamella=lamella, parent_ui=self, save_state=True, update_ui=False
             )
 
         elif lamella.workflow is AutoLamellaStage.PositionReady:
             self.experiment.positions[idx] = start_of_stage_update(
-                self.microscope,
-                lamella,
-                AutoLamellaStage.Created,
-                parent_ui=self,
-                restore_state=False,
-                update_ui=False
+                self.microscope, lamella, AutoLamellaStage.Created,
+                parent_ui=self, restore_state=False, update_ui=False
             )
 
-            self.milling_widget.CAN_MOVE_PATTERN = True
-            self.milling_widget.setEnabled(True)
-
-        self.experiment.positions[idx].state.microscope_state.stage_position.name = lamella.name
+        # allow editing the milling widget if lamella is created
+        enable_milling = self.experiment.positions[idx].workflow == AutoLamellaStage.Created
+        self.milling_widget.CAN_MOVE_PATTERN = enable_milling
+        self.milling_widget.setEnabled(enable_milling)
 
         self.sync_experiment_positions_to_minimap()
         self.update_lamella_combobox()
         self.update_ui()
         self.experiment.save()
 
-    def _update_milling_protocol(
-        self, idx: int, method: AutoLamellaMethod, stage: AutoLamellaStage
-    ):
+    def _update_milling_protocol(self, idx: int):
 
         if self.protocol is None:
             raise ValueError("No protocol loaded. Please load a protocol first.")
@@ -1801,14 +1792,13 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
             raise ValueError("No experiment loaded. Please load an experiment first.")
         if self.experiment.positions == []:
             raise ValueError("No lamella positions available. Please add a lamella first.")
-
-        if stage not in PREPARTION_WORKFLOW_STAGES:
-            return
+        if self.milling_widget is None:
+            raise ValueError("No milling widget available. Please create a milling widget first.")
 
         stages = deepcopy(self.milling_widget.get_milling_stages())
 
         # TRENCH SETUP
-        if method.is_trench:
+        if self.protocol.method.is_trench:
             self.experiment.positions[idx].protocol[TRENCH_KEY] = get_protocol_from_stages(stages)
             return 
 
@@ -1823,7 +1813,7 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
 
         # polishing
         self.experiment.positions[idx].protocol[MILL_POLISHING_KEY] = get_protocol_from_stages(stages[n_mill_rough:n_mill_rough+n_mill_polishing])
-        
+
         # total number of stages in lamella
         n_lamella = n_mill_rough + n_mill_polishing
 
@@ -1842,6 +1832,8 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
             self.experiment.positions[idx].protocol[FIDUCIAL_KEY] = get_protocol_from_stages(stages[-1])
 
     def run_milling(self):
+        if self.milling_widget is None:
+            raise ValueError("No milling widget available. Please create a milling widget first.")
         self.is_milling = True
         self.tabWidget.setCurrentIndex(CONFIGURATION["TABS"]["Milling"])
         self.milling_widget.run_milling()
@@ -1867,6 +1859,16 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
 
     def _run_workflow(self, workflow: str) -> None:
         """Run the specified workflow."""
+        if self.microscope is None:
+            return
+        if self.protocol is None:
+            return
+        if self.experiment is None:
+            return
+        if self.experiment.positions == []:
+            return
+        if self.milling_widget is None:
+            return
 
         accepted, stc, supervision = open_workflow_dialog(
             experiment=deepcopy(self.experiment),
