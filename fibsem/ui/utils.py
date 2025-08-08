@@ -88,18 +88,17 @@ def create_combobox_message_box(text: str, title: str, options: list, parent = N
 # TODO: add filters for file types
 
 def open_existing_directory_dialog(
-    msg: str = "Select a directory", path: Path = cfg.LOG_PATH, parent=None
-) -> Path:
+    msg: str = "Select a directory", path: str = cfg.LOG_PATH, parent=None
+) -> str:
     path = QtWidgets.QFileDialog.getExistingDirectory(parent=parent, caption=msg, directory=path)
     return path
 
-
 def open_existing_file_dialog(
     msg: str = "Select a file",
-    path: Path = cfg.LOG_PATH,
+    path: str = cfg.LOG_PATH,
     _filter: str = "*yaml",
-    parent=None,
-) -> Path:
+    parent: Optional[QWidget] = None,
+) -> str:
     path, _ = QtWidgets.QFileDialog.getOpenFileName(
         parent=parent, 
         caption=msg, 
@@ -108,13 +107,12 @@ def open_existing_file_dialog(
     )
     return path
 
-
 def open_save_file_dialog(
     msg: str = "Select a file",
-    path: Path = cfg.LOG_PATH,
+    path: str = cfg.LOG_PATH,
     _filter: str = "*yaml",
-    parent=None,
-) -> Path:
+    parent: Optional[QWidget] = None,
+) -> str:
     path, _ = QtWidgets.QFileDialog.getSaveFileName(
         parent=parent,
         caption=msg,
@@ -128,7 +126,7 @@ def open_text_input_dialog(
     title: str = "Text Entry",
     default: str = "UserText",
     parent=None,
-) -> Tuple[str, bool]:
+) -> Tuple[str, Optional[bool]]:
     text, okPressed = QtWidgets.QInputDialog.getText(
         parent,
         title,
@@ -138,7 +136,7 @@ def open_text_input_dialog(
     )
     return text, okPressed
 
-def open_information_dialog(microscope: FibsemMicroscope, parent=None):
+def open_information_dialog(microscope: FibsemMicroscope, parent: Optional[QWidget] = None):
     import fibsem
     
     fibsem_version = fibsem.__version__

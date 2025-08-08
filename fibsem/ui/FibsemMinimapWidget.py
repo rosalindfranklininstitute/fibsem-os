@@ -1,6 +1,5 @@
 import logging
 from copy import deepcopy
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import napari
@@ -427,7 +426,7 @@ class FibsemMinimapWidget(FibsemMinimapWidgetUI.Ui_MainWindow, QMainWindow):
 
         filename = ui_utils.open_existing_file_dialog(
             msg="Select image to load", 
-            path=Path(self.lineEdit_tile_path.text()), 
+            path=self.lineEdit_tile_path.text(), 
             _filter="Image Files (*.tif *.tiff)", 
             parent=self)
 
