@@ -303,6 +303,104 @@ def reproject_stage_positions_onto_image(
     
     return points
 
+def calculate_reprojected_stage_position2(microscope: FibsemMicroscope, image: FibsemImage, pos: FibsemStagePosition) -> Point:
+    """Calculate the reprojected stage position on an image.
+    Args:
+        image: The image.
+        pos: The stage position.
+    Returns:
+        The reprojected stage position on the image."""
+
+    if image.metadata is None or image.metadata.microscope_state is None:
+        raise ValueError("Image metadata or microscope state is not set. Cannot reproject stage position.")
+
+    if image.metadata.microscope_state.stage_position is None:
+        raise ValueError("Image metadata does not contain a valid stage position. Cannot reproject stage position.")
+
+
+    beam_type = image.metadata.image_settings.beam_type
+    base_stage_position = image.metadata.microscope_state.stage_position 
+    pixel_size = image.metadata.pixel_size.x
+
+    scan_rotation = None
+    if beam_type is BeamType.ELECTRON:
+        if image.metadata.microscope_state.electron_beam is None:
+            raise ValueError("Image metadata does not contain a valid electron beam state. Cannot reproject stage position.")
+        scan_rotation = image.metadata.microscope_state.electron_beam.scan_rotation
+    if beam_type is BeamType.ION:
+        if image.metadata.microscope_state.ion_beam is None:
+            raise ValueError("Image metadata does not contain a valid ion beam state. Cannot reproject stage position.")
+        scan_rotation = image.metadata.microscope_state.ion_beam.scan_rotation
+
+    if scan_rotation is None:
+        raise ValueError("Image metadata does not contain a valid scan rotation. Cannot reproject stage position.")
+
+    # difference between current position and image position
+    delta = pos - base_stage_position
+
+    # projection of the positions onto the image
+    dx = delta.x
+    if dx is None:
+        raise ValueError("Stage position x coordinate is None. Cannot reproject stage position.")
+    dy = microscope._inverse_y_corrected_stage_movement(dy=delta.y, dz=delta.z, beam_type=beam_type) # type: ignore
+
+    pt_delta = Point(dx, -dy)
+    px_delta = pt_delta._to_pixels(pixel_size)
+
+    if np.isclose(scan_rotation, np.pi):
+        px_delta.x *= -1.0
+        px_delta.y *= -1.0
+
+    image_centre = Point(x=image.data.shape[1]/2, y=image.data.shape[0]/2)
+    point = image_centre + px_delta
+
+    return point
+
+def reproject_stage_positions_onto_image2(
+        microscope: FibsemMicroscope,
+        image:FibsemImage, 
+        positions: List[FibsemStagePosition], 
+        bound: bool=False) -> List[Point]:
+    """Reproject stage positions onto an image. Assumes image is flat to beam.
+    Args:
+        image: The image.
+        positions: The positions.
+        bound: Whether to only return points inside the image.
+    Returns:
+        The reprojected stage positions on the image plane."""
+    from fibsem.ui.napari.utilities import is_inside_image_bounds
+
+    # reprojection of positions onto image coordinates
+    points = []
+    for pos in positions:
+
+        # compucentric rotation correction
+        if image.metadata is None or image.metadata.microscope_state is None:
+            raise ValueError("Image metadata or microscope state is not set. Cannot reproject stage position.")
+        if image.metadata.microscope_state.stage_position is None:
+            raise ValueError("Image metadata does not contain a valid stage position. Cannot reproject stage position.")
+        if image.metadata.microscope_state.stage_position is None:
+            raise ValueError("Image metadata does not contain a valid stage position. Cannot reproject stage position.")
+        if image.metadata.microscope_state.stage_position.r is None:
+            raise ValueError("Image metadata does not contain a valid stage position r coordinate. Cannot reproject stage position.")
+        if pos.r is None:
+            raise ValueError("Stage position r coordinate is None. Cannot reproject stage position.")
+        # automate logic for transforming positions
+        dr = abs(np.rad2deg(image.metadata.microscope_state.stage_position.r - pos.r))
+        if np.isclose(dr, 180, atol=2):
+            pos = _transform_position(pos)
+
+        pt = calculate_reprojected_stage_position2(microscope, image, pos)
+        pt.name = pos.name
+
+        if bound and not is_inside_image_bounds((pt.y, pt.x), image.data.shape):
+            continue
+
+        points.append(pt)
+
+    return points
+
+
 def plot_stage_positions_on_image(
         image: FibsemImage,
         positions: List[FibsemStagePosition],

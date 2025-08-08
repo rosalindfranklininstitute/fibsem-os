@@ -605,6 +605,9 @@ class DemoMicroscope(FibsemMicroscope):
         """
         return ThermoMicroscope._y_corrected_stage_movement(self, expected_y=expected_y, beam_type=beam_type)
 
+    def _inverse_y_corrected_stage_movement(self, dy: float, dz: float, beam_type: BeamType = BeamType.ELECTRON) -> float:
+        return ThermoMicroscope._inverse_y_corrected_stage_movement(self, dy=dy, dz=dz, beam_type=beam_type)
+
     def insert_manipulator(self, name: str = "PARK") -> FibsemManipulatorPosition:
         """Insert the manipulator to the specified position."""
 
