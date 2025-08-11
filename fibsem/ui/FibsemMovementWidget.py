@@ -295,6 +295,10 @@ class FibsemMovementWidget(FibsemMovementWidgetUI.Ui_Form, QtWidgets.QWidget):
         if event.button != 1 or "Shift" in event.modifiers:
             return
 
+        if hasattr(self.parent, "milling_widget") and self.parent.milling_widget.is_milling:
+            napari.utils.notifications.show_info("Cannot move stage while milling is in progress.")
+            return
+
         # get coords
         coords = layer.world_to_data(event.position)
 
@@ -305,6 +309,11 @@ class FibsemMovementWidget(FibsemMovementWidgetUI.Ui_Form, QtWidgets.QWidget):
         if beam_type is None:
             napari.utils.notifications.show_info(
                 "Clicked outside image dimensions. Please click inside the image to move."
+            )
+            return
+        if image.metadata is None:
+            napari.utils.notifications.show_info(
+                "Image metadata is not set. Please set the image metadata before moving."
             )
             return
 

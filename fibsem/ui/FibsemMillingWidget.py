@@ -138,12 +138,13 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         self.image_widget: FibsemImageSettingsWidget = parent.image_widget
         
         # correlation widget
-        self.correlation_widget: CorrelationUI = None
+        self.correlation_widget: Optional[CorrelationUI] = None
 
         self.UPDATING_PATTERN: bool = False
         self.CAN_MOVE_PATTERN: bool = True
         self.STOP_MILLING: bool = False
         self.MILLING_STAGES_INITIALISED: bool = False
+        self.is_milling: bool = False
 
         self.current_milling_stage: Optional[FibsemMillingStage] = None
         self.milling_stages: List[FibsemMillingStage] = []
@@ -992,7 +993,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         total_time = estimate_total_milling_time(milling_stages)
         self.label_milling_estimated_time.setText(f"Estimated Milling Time: {format_duration(total_time)}")
 
-    def get_selected_milling_stages(self) -> Optional[FibsemMillingStage]:
+    def get_selected_milling_stages(self) -> List[FibsemMillingStage]:
         """Return the milling stages that are checked in the list widget."""
         checked_indexes = []
         for i in range(self.listWidget_active_milling_stages.count()):
@@ -1017,6 +1018,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         selected_milling_stages = self.get_selected_milling_stages()
 
         # start milling
+        self.is_milling = True
         worker = self.run_milling_step(selected_milling_stages)
         worker.finished.connect(self.run_milling_finished)
         worker.start()
@@ -1044,6 +1046,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         self.update_ui() # TODO: convert to signal for image acquisition
         self.milling_progress_signal.emit({"finished": True, "msg": "Milling Finished."})
         self.STOP_MILLING = False
+        self.is_milling = False
 
     def stop_milling(self):
         """Request milling stop."""
