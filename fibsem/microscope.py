@@ -1987,6 +1987,8 @@ class ThermoMicroscope(FibsemMicroscope):
         # current stage position
         if stage_position is None:
             stage_position = self.get_stage_position()
+        if stage_position.r is None or stage_position.t is None:
+            raise ValueError("Stage position must have both rotation (r) and tilt (t) defined.")
         stage_rotation = stage_position.r % (2 * np.pi)
         stage_tilt = stage_position.t
 
@@ -1996,6 +1998,10 @@ class ThermoMicroscope(FibsemMicroscope):
         sem = self.get_orientation("SEM")
         fib = self.get_orientation("FIB")
         milling = self.get_orientation("MILLING")
+        if sem is None or fib is None or milling is None:
+            raise ValueError("SEM, FIB or MILLING orientation not defined in the system.")
+        if sem.r is None or sem.t is None or fib.r is None or fib.t is None or milling.r is None or milling.t is None:
+            raise ValueError("SEM, FIB or MILLING orientation must have both rotation (r) and tilt (t) defined.")
 
         is_sem_rotation = movement.rotation_angle_is_smaller(stage_rotation, sem.r, atol=5) # query: do we need rotation_angle_is_smaller, since we % 2pi the rotation?
         is_fib_rotation = movement.rotation_angle_is_smaller(stage_rotation, fib.r, atol=5)
