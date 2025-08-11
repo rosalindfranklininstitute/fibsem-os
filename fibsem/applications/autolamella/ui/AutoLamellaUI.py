@@ -1977,6 +1977,11 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
     def handle_workflow_update(self, info: dict) -> None:
         """Update the UI with the given information, ready for user interaction"""
 
+        if self.image_widget is None:
+            raise ValueError("No image widget available. Please create an image widget first.")
+        if self.milling_widget is None:
+            raise ValueError("No milling widget available. Please create a milling widget first.")
+
         # update the image viewer
         sem_image = info.get("sem_image", None)
         if sem_image is not None:
@@ -1984,7 +1989,7 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
             self.image_widget.update_viewer(arr=sem_image.data, 
                                             beam_type=BeamType.ELECTRON, 
                                             set_ui_from_image=True)
-        
+
         fib_image = info.get("fib_image", None)
         if fib_image is not None:
             self.image_widget.ib_image = fib_image
@@ -2016,12 +2021,12 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
             self.image_widget.toggle_alignment_area(alignment_area)
         if alignment_area == "clear":
             self.image_widget.clear_alignment_area()
-        
+
         # spot_burn
         spot_burn = info.get("spot_burn", None)
         if spot_burn:
             self.set_spot_burn_widget_active(True)
-        
+
         # no specific interaction, just update the ui
         if detections is None and enable_milling is None and alignment_area is None and spot_burn is None:
             self.tabWidget.setCurrentIndex(CONFIGURATION["TABS"]["Experiment"])
@@ -2051,7 +2056,7 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
         experiment: Experiment,
         method: AutoLamellaMethod,
         workflow: str = "trench",
-        stc: List[AutoLamellaStage] = None
+        stc: Optional[List[AutoLamellaStage]] = None
     ):
         logging.info(f"Started {workflow.title()} Workflow...")
 

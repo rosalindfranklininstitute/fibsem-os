@@ -176,7 +176,7 @@ class FibsemImageSettingsWidget(ImageSettingsWidgetUI.Ui_Form, QtWidgets.QWidget
 
         # feature flags
         self.pushButton_show_alignment_area.setVisible(False)
-        self.pushButton_show_alignment_area.clicked.connect(lambda: self.toggle_alignment_area(None))
+        # self.pushButton_show_alignment_area.clicked.connect(lambda: self.toggle_alignment_area(None))
 
         self.pushButton_take_image.setVisible(False)
         self.acquisition_buttons: List[QtWidgets.QPushButton] = [
@@ -858,10 +858,9 @@ class FibsemImageSettingsWidget(ImageSettingsWidgetUI.Ui_Form, QtWidgets.QWidget
         self.alignment_layer.visible = False
         self.restore_active_layer_for_movement()
 
-    def toggle_alignment_area(self, reduced_area: FibsemRectangle = None, editable: bool = True):
+    def toggle_alignment_area(self, reduced_area: FibsemRectangle, editable: bool = True):
         """Toggle the alignment area layer to selection mode, and display the alignment area."""
         if self.viewer.layers.selection.active == self.eb_layer:
-            logging.debug(f"Alignment area being set to: {reduced_area}")
             self.set_alignment_layer(reduced_area, editable=editable)
             self.alignment_layer.visible = True
         else:
@@ -873,8 +872,8 @@ class FibsemImageSettingsWidget(ImageSettingsWidgetUI.Ui_Form, QtWidgets.QWidget
         """Set the alignment area layer in napari."""
 
         # add alignment area to napari
-        data = convert_reduced_area_to_napari_shape(reduced_area=reduced_area, 
-                                                    image_shape=self.ib_image.data.shape, 
+        data = convert_reduced_area_to_napari_shape(reduced_area=reduced_area,
+                                                    image_shape=self.ib_image.data.shape,
                                                    )
         if self.alignment_layer is None:
             self.alignment_layer = self.viewer.add_shapes(data=data, 
@@ -884,7 +883,7 @@ class FibsemImageSettingsWidget(ImageSettingsWidgetUI.Ui_Form, QtWidgets.QWidget
                         edge_width=ALIGNMENT_LAYER_PROPERTIES["edge_width"], 
                         face_color=ALIGNMENT_LAYER_PROPERTIES["face_color"], 
                         opacity=ALIGNMENT_LAYER_PROPERTIES["opacity"], 
-                        translate=self.ib_layer.translate) # match the ib layer translation
+                        translate=self.ib_layer.translate) # match the fib layer translation
             self.alignment_layer.metadata = ALIGNMENT_LAYER_PROPERTIES["metadata"]
             self.alignment_layer.events.data.connect(self.update_alignment)
             self.alignment_area_updated.connect(self._on_alignment_area_updated)
@@ -924,8 +923,7 @@ class FibsemImageSettingsWidget(ImageSettingsWidgetUI.Ui_Form, QtWidgets.QWidget
     def get_alignment_area(self) -> Optional[FibsemRectangle]:
         """Get the alignment area from the alignment layer."""
         data = self.alignment_layer.data
-        if data is None:
+        if data is None or len(data) == 0:
             return None
         data = data[0]
         return convert_shape_to_image_area(data, self.ib_image.data.shape)
-
