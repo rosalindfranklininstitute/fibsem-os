@@ -145,7 +145,7 @@ class FibsemMillingTask:
             for idx, stage in enumerate(self.stages):
                 start_time = time.time()
                 if self.parent_ui:
-                    if self.parent_ui.STOP_MILLING:
+                    if self.parent_ui._milling_stop_event.is_set():
                         raise Exception("Milling stopped by user.")
 
                 msgd =  {"msg": f"Preparing: {stage.name}",

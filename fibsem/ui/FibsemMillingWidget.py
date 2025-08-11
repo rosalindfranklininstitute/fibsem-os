@@ -5,6 +5,7 @@ import traceback
 from copy import deepcopy
 from pprint import pprint
 from typing import Dict, List, Optional, Tuple, Union
+import threading
 
 import napari
 import napari.utils.notifications
@@ -127,7 +128,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         self,
         microscope: FibsemMicroscope,
         viewer: napari.Viewer,
-        parent: QtWidgets.QWidget = None,
+        parent: QtWidgets.QWidget,
     ):
         super().__init__(parent=parent)
         self.setupUi(self)
@@ -142,7 +143,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
 
         self.UPDATING_PATTERN: bool = False
         self.CAN_MOVE_PATTERN: bool = True
-        self.STOP_MILLING: bool = False
+        self._milling_stop_event = threading.Event()  # Event to stop milling
         self.MILLING_STAGES_INITIALISED: bool = False
         self.is_milling: bool = False
 
@@ -154,7 +155,6 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         self.strategy_config_widgets: Dict[str, Tuple[QtWidgets.QLabel, QtWidgets.QWidget]] = {}
 
         self.setup_connections()
-        # TODO: migrate to MILLING_WORKFLOWS: Dict[str, List[FibsemMillingStage]]
 
     def setup_connections(self):
         """Setup the connections for the milling widget."""
@@ -164,7 +164,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
 
         if isinstance(self.microscope, DemoMicroscope) or (not is_thermo and not is_tescan):
             is_thermo, is_tescan = True, False
-        
+
         # MILLING SETTINGS
         # general
         AVAILABLE_MILLING_MODES: List[str] = ["Serial", "Parallel"] # TODO: make microscope method
@@ -174,7 +174,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         self.doubleSpinBox_hfw.valueChanged.connect(self.update_milling_settings_from_ui)
         self.checkBox_milling_acquire_images.stateChanged.connect(self.update_milling_settings_from_ui)
         self.checkBox_milling_acquire_images.stateChanged.connect(self.toggle_imaging_visibility)
-        
+
         # ThermoFisher Only 
         self.label_application_file.setVisible(is_thermo)
         self.comboBox_application_file.setVisible(is_thermo)
@@ -562,9 +562,9 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
     def get_milling_alignment_from_ui(self):
         """Get the drift correction settings from the UI."""
         milling_alignment = self.current_milling_stage.alignment
-        milling_alignment.enabled=self.checkBox_alignment_enabled.isChecked()
-        milling_alignment.interval_enabled=self.checkBox_alignment_interval_enabled.isChecked()
-        milling_alignment.interval=self.doubleSpinBox_alignment_interval.value()
+        milling_alignment.enabled = self.checkBox_alignment_enabled.isChecked()
+        milling_alignment.interval_enabled = self.checkBox_alignment_interval_enabled.isChecked()
+        milling_alignment.interval = int(self.doubleSpinBox_alignment_interval.value())
         #milling_alignment.rect=self.image_widget.get_alignment_area(), # TODO: get the alignment area from the image widget
         return milling_alignment
 
@@ -850,7 +850,10 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         if beam_type is not BeamType.ION:
             napari.utils.notifications.show_warning("Patterns can only be placed inside the FIB image.")
             return
-        
+        if image.metadata is None:
+            napari.utils.notifications.show_warning("Image metadata is not available.")
+            return
+
         point = conversions.image_to_microscope_image_coordinates(
                 coord=Point(x=coords[1], y=coords[0]), # yx required
                 image=image.data,
@@ -1019,6 +1022,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
 
         # start milling
         self.is_milling = True
+        self._milling_stop_event.clear()  # reset the stop event
         worker = self.run_milling_step(selected_milling_stages)
         worker.finished.connect(self.run_milling_finished)
         worker.start()
@@ -1039,20 +1043,19 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         return
 
     def run_milling_finished(self):
+        """Callback when the milling is finished."""
 
         # take new images and update ui
         self._toggle_interactions(enabled=True)
         self.image_widget.acquire_reference_images()
         self.update_ui() # TODO: convert to signal for image acquisition
         self.milling_progress_signal.emit({"finished": True, "msg": "Milling Finished."})
-        self.STOP_MILLING = False
         self.is_milling = False
 
     def stop_milling(self):
         """Request milling stop."""
-        self.STOP_MILLING = True
+        self._milling_stop_event.set()
         self.microscope.stop_milling()
-        self.milling_progress_signal.emit({"finished": True, "msg": "Milling Stopped by User."})
 
     def pause_resume_milling(self):
         """Request milling pause / resume."""
@@ -1123,16 +1126,16 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
             self.label_milling_information.setVisible(True)
             self.label_milling_information.setText(msg)
 
-        progress_info = ddict.get("progress", None)
+        progress_info: Dict[str, float] = ddict.get("progress", None)
         if progress_info is not None:
             self.update_progress_bar(progress_info)
-            
-        # finsihed milling
+
+        # finished milling
         if ddict.get("finished", False):
             self.MILLING_IS_FINISHED = True
             self.update_progress_bar({"state": "finished"})
 
-    def _toggle_interactions(self, enabled: bool = True, caller: str = None, milling: bool = False):
+    def _toggle_interactions(self, enabled: bool = True, caller: Optional[str] = None, milling: bool = False):
         """Toggle microscope and pattern interactions."""
 
         self.pushButton_add_milling_stage.setEnabled(enabled)

@@ -180,7 +180,7 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
         self.WAITING_FOR_USER_INTERACTION: bool = False
         self.USER_RESPONSE: bool = False
         self.WAITING_FOR_UI_UPDATE: bool = False
-        self.is_milling: bool = False
+        self.is_milling: bool = False               # TODO: deprecate this flag, use milling_widget.is_milling instead
         self.WORKFLOW_IS_RUNNING: bool = False
         self._workflow_stop_event: threading.Event = threading.Event()
 

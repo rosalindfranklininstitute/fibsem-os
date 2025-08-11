@@ -1,7 +1,7 @@
 import logging
 import time
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, TYPE_CHECKING, Optional
 
 from fibsem import acquire, config as fcfg
 from fibsem.microscope import FibsemMicroscope
@@ -13,6 +13,9 @@ from fibsem.structures import (
     BeamType,
 )
 from fibsem.utils import current_timestamp_v2
+
+if TYPE_CHECKING:
+    from fibsem.ui.FibsemMillingWidget import FibsemMillingWidget
 
 ########################### SETUP
 
@@ -92,7 +95,7 @@ def draw_pattern(microscope: FibsemMicroscope, pattern: FibsemPatternSettings):
 def mill_stages(
     microscope: FibsemMicroscope,
     stages: List[FibsemMillingStage],
-    parent_ui=None,
+    parent_ui: Optional['FibsemMillingWidget'] = None,
 ):
     """Run a list of milling stages, with a progress bar and notifications."""
 
@@ -123,7 +126,7 @@ def mill_stages(
         for idx, stage in enumerate(stages):
             start_time = time.time()
             if parent_ui:
-                if parent_ui.STOP_MILLING:
+                if parent_ui._milling_stop_event.is_set():
                     raise Exception("Milling stopped by user.")
 
                 msgd =  {"msg": f"Preparing: {stage.name}",

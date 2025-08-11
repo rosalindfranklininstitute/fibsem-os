@@ -61,6 +61,8 @@ def update_milling_ui(microscope: FibsemMicroscope,
         parent_ui.is_milling = True
         parent_ui.run_milling_signal.emit() # TODO: have the signal change the state, rather than here
 
+        # TODO: need to wait for the flag, is_milling to be set before moving to the waiting
+        # hack: time.sleep(2)
         logging.info("WAITING FOR MILLING TO FINISH... ")
         while parent_ui.is_milling or parent_ui.image_widget.is_acquiring:
             _check_for_abort(parent_ui=parent_ui)
