@@ -1809,6 +1809,38 @@ class ThermoMicroscope(FibsemMicroscope):
 
         return self.get_stage_position()
 
+    def move_coincident_from_sem(self, dx: float, dy: float) -> FibsemStagePosition:
+        """Correct coincident point from SEM to FIB stage position."""
+
+        # NOTE:
+        # inaccurate over longer distances, but works for small movements
+        # less accurate for higher tilt angles
+
+        # move to position in SEM
+        base_position = self.get_stage_position()
+        self.stable_move(dx=dx, dy=dy, beam_type=BeamType.ELECTRON)
+
+        # calculate the difference in position after SEM move
+        position_after_sem_move = self.get_stage_position()
+        dy = position_after_sem_move.y - base_position.y
+        dz = position_after_sem_move.z - base_position.z
+
+        # correct for the stage tilt and milling angle
+        if self.get_stage_orientation() in ["SEM","MILLING"]:
+            theta = np.radians(self.get_current_milling_angle()) # deg
+            dy = dy*np.sin(theta)
+
+        # NOTE: vertical move also corrects for scan rotation, so we need to adjust dy accordingly
+        # if the scan rotation is 0, we need to invert the dy value
+        scan_rotation = self.get_scan_rotation(beam_type=BeamType.ION)
+        if np.isclose(scan_rotation, 0):
+            dy *= -1.0
+
+        # apply the vertical move to correct the position
+        self.vertical_move(dx=0, dy=dy*1.11) # TODO: MAGIC_NUMBER To correct for perspective correction...
+
+        return self.get_stage_position()
+
     def _y_corrected_stage_movement(
         self,
         expected_y: float,

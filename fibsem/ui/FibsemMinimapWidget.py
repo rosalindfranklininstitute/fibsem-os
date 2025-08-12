@@ -57,7 +57,7 @@ DEFAULT_FOV = 500 # um
 DEFAULT_DWELL_TIME = 1.0 # us
 
 # feature flags
-USE_INVERSE_PROJECTION: bool = False
+USE_INVERSE_PROJECTION: bool = True
 
 def generate_gridbar_image(shape: Tuple[int, int], pixelsize: float, spacing: float, width: float) -> FibsemImage:
     """Generate an synthetic image of cryo gridbars."""
@@ -674,7 +674,7 @@ class FibsemMinimapWidget(FibsemMinimapWidgetUI.Ui_MainWindow, QMainWindow):
         else:
             points = tiled.reproject_stage_positions_onto_image(self.image, [current_stage_position])
         points[0].name = "Current Position"
-        
+
         draw_positions_in_napari(viewer=self.viewer, 
                                  points=points, 
                                  show_names=True, 
@@ -689,7 +689,6 @@ class FibsemMinimapWidget(FibsemMinimapWidgetUI.Ui_MainWindow, QMainWindow):
         # we should delay that until the user requests it
 
         if self.image and self.positions:
-            logging.info("Drawing Reprojected Positions...")
 
             if USE_INVERSE_PROJECTION:
                 points = tiled.reproject_stage_positions_onto_image2(self.microscope, self.image, self.positions)

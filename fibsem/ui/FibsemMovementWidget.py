@@ -339,6 +339,9 @@ class FibsemMovementWidget(FibsemMovementWidgetUI.Ui_Form, QtWidgets.QWidget):
         # eucentric is only supported for ION beam
         if beam_type is BeamType.ION and vertical_move:
             self.microscope.vertical_move(dx=point.x, dy=point.y)
+        elif beam_type is BeamType.ELECTRON and vertical_move and hasattr(self.microscope, "move_coincident_from_sem"):
+            # move coincident from SEM
+            self.microscope.move_coincident_from_sem(dx=0, dy=point.y) # TMP: disable dx for now
         else:
             # corrected stage movement
             self.microscope.stable_move(
