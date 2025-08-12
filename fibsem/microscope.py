@@ -3057,7 +3057,7 @@ class ThermoMicroscope(FibsemMicroscope):
         """Get a property of the microscope."""
         # TODO: make the list of get and set keys available to the user
         if beam_type is not None:
-            beam = self.connection.beams.electron_beam if beam_type == BeamType.ELECTRON else self.connection.beams.ion_beam
+            beam = self._get_beam(beam_type)
 
         if key == "active_view":
             return self.connection.imaging.get_active_view()
@@ -3193,7 +3193,7 @@ class ThermoMicroscope(FibsemMicroscope):
 
         # get beam
         if beam_type is not None:
-            beam = self.connection.beams.electron_beam if beam_type == BeamType.ELECTRON else self.connection.beams.ion_beam
+            beam = self._get_beam(beam_type)
 
         if key == "active_view":
             self.connection.imaging.set_active_view(value.value)  # the beam type is the active view (in ui)
