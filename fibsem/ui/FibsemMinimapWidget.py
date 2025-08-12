@@ -56,6 +56,9 @@ DEFAULT_TILE_COUNT = TILE_COUNTS[2] # 3x3 grid
 DEFAULT_FOV = 500 # um
 DEFAULT_DWELL_TIME = 1.0 # us
 
+# feature flags
+USE_INVERSE_PROJECTION: bool = False
+
 def generate_gridbar_image(shape: Tuple[int, int], pixelsize: float, spacing: float, width: float) -> FibsemImage:
     """Generate an synthetic image of cryo gridbars."""
     arr = np.zeros(shape=shape, dtype=np.uint8)
@@ -666,8 +669,10 @@ class FibsemMinimapWidget(FibsemMinimapWidgetUI.Ui_MainWindow, QMainWindow):
     def draw_current_stage_position(self):
         """Draws the current stage position on the image."""
         current_stage_position = deepcopy(self.microscope.get_stage_position())
-        # points = tiled.reproject_stage_positions_onto_image2(self.microscope, self.image, [current_stage_position]) # TEST: INVERSE_PROJECTION
-        points = tiled.reproject_stage_positions_onto_image(self.image, [current_stage_position])
+        if USE_INVERSE_PROJECTION:
+            points = tiled.reproject_stage_positions_onto_image2(self.microscope, self.image, [current_stage_position])
+        else:
+            points = tiled.reproject_stage_positions_onto_image(self.image, [current_stage_position])
         points[0].name = "Current Position"
         
         draw_positions_in_napari(viewer=self.viewer, 
@@ -686,8 +691,10 @@ class FibsemMinimapWidget(FibsemMinimapWidgetUI.Ui_MainWindow, QMainWindow):
         if self.image and self.positions:
             logging.info("Drawing Reprojected Positions...")
 
-            # points = tiled.reproject_stage_positions_onto_image2(self.microscope, self.image, self.positions)  # TEST: INVERSE_PROJECTION
-            points = tiled.reproject_stage_positions_onto_image(self.image, self.positions)
+            if USE_INVERSE_PROJECTION:
+                points = tiled.reproject_stage_positions_onto_image2(self.microscope, self.image, self.positions)
+            else:
+                points = tiled.reproject_stage_positions_onto_image(self.image, self.positions)
 
             position_layer = draw_positions_in_napari(viewer=self.viewer, 
                                 points=points, 
