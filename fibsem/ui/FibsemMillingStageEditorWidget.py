@@ -336,11 +336,6 @@ PARAMETER_MAPPING = {
 # multi-stages
 # advanced settings display
 
-def pretty_name(milling_stage: FibsemMillingStage) -> str:
-    milling_current = milling_stage.milling.milling_current
-    mc = format_value(val=milling_current, unit="A", precision=1)
-    txt = f"{milling_stage.name} - {milling_stage.pattern.name} ({mc})"
-    return txt
 
 class FibsemMillingStageWidget(QWidget):
     _milling_stage_changed = pyqtSignal(FibsemMillingStage)

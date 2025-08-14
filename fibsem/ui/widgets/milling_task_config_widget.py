@@ -137,6 +137,20 @@ class MillingTaskConfigWidget(QWidget):
         # Add stretch to push everything to the top
         layout.addStretch()
 
+        from fibsem import utils
+        import napari
+        microscope, settings = utils.setup_session()
+
+        stage_editor = FibsemMillingStageEditorWidget(viewer=napari.current_viewer(), microscope=microscope, milling_stages=[], parent=main_widget)
+        layout.addWidget(stage_editor)
+
+        # NOTES: shouldn't know anything about viewer, or microscope
+        # only need microscope to get 'dynamic' values such as milling current
+        # should make this 'optional' and pass in from parent
+        # viewer is used to display the milling stages
+        # could we do this at a higher level and just subscribe to the settings_changed signal?
+
+
     def _connect_signals(self):
         """Connect widget signals to their respective handlers.
 
@@ -226,12 +240,16 @@ class MillingTaskConfigWidget(QWidget):
         return self._show_advanced
 
 
+
+from fibsem.ui.FibsemMillingStageEditorWidget import FibsemMillingStageEditorWidget
+
 if __name__ == "__main__":
     import sys
     from PyQt5.QtWidgets import QApplication, QPushButton, QCheckBox
 
-    app = QApplication(sys.argv)
-
+    # app = QApplication(sys.argv)
+    import napari
+    viewer = napari.Viewer()
     # Create main window
     main_widget = QWidget()
     layout = QVBoxLayout()
@@ -276,8 +294,7 @@ if __name__ == "__main__":
     main_widget.setWindowTitle("MillingTaskConfig Widget Test")
     # main_widget.show()
 
-    import napari
-    viewer = napari.Viewer()
+
     viewer.window.add_dock_widget(main_widget, area='right')
 
     napari.run()

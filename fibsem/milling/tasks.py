@@ -124,7 +124,7 @@ class FibsemMillingTask:
 
     def _handle_progress(self, ddict: dict) -> None:
         """Handle progress updates from the microscope."""
-        if self.parent_ui:
+        if self.parent_ui: # TODO: migrate to ensure_main_thread
             self.parent_ui.milling_progress_signal.emit(ddict)
         else:
             logging.info(ddict)
