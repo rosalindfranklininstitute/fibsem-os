@@ -1726,13 +1726,16 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
             not lamella.stage_position.is_close(current_position, 1e-6)
             and lamella.workflow is AutoLamellaStage.Created
         ):
-            ret = fui.message_box_ui(
-                title="Far away from lamella position",
-                text="The current position is far away from the initial lamella position. Move to initial lamella position? (Press No to save at current position)",
+            ret = fui.message_box_ui_with_custom_buttons(
+                message="The current position is far away from the initial lamella position. Do you want to move to the initial lamella position?"
+                f"\n\nInitial Position: {lamella.stage_position.pretty_string}"
+                f"\nCurrent Position: {current_position.pretty_string}",
+                title="Move to Lamella Position",
+                yes_text="Move to Initial Position",
+                no_text="Use Current Position",
+                parent=self,
             )
-
-            # TODO: handle the case when user exits dialog box
-            # TODO: only do this check if position created by minimap?
+            # NOTE: assumes closing dialog returns False
 
             if ret is True:
                 # move to lamella position

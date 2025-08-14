@@ -1,6 +1,6 @@
 
 from pathlib import Path
-from typing import Tuple, List, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 from PyQt5 import QtGui, QtWidgets
@@ -8,11 +8,13 @@ from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
     QLabel,
     QMessageBox,
+    QPushButton,
     QWidget,
 )
 
 from fibsem import config as cfg
 from fibsem.microscope import FibsemMicroscope
+
 
 def set_arr_as_qlabel(
     arr: np.ndarray,
@@ -49,6 +51,58 @@ def message_box_ui(title: str,
 
     return response
 
+def message_box_ui_with_custom_buttons(
+    message, 
+    title="Message", 
+    yes_text="Yes",
+    no_text="No",
+    icon=QMessageBox.Question, 
+    parent=None
+):
+    """
+    Create a custom QMessageBox dialog with two custom buttons.
+    
+    Args:
+        message: Dialog message text
+        title: Dialog title (default: "Message")
+        yes_text: Text for the Yes button (default: "Yes")
+        no_text: Text for the No button (default: "No")
+        icon: QMessageBox icon (default: QMessageBox.Question)
+        parent: Parent widget
+        
+    Returns:
+        bool or None: True if Yes button is clicked, 
+                     False if No button is clicked,
+                     None if dialog is closed
+    """
+    msg_box = QMessageBox(parent)
+    msg_box.setWindowTitle(title)
+    msg_box.setText(message)
+    msg_box.setIcon(icon)
+    
+    # Create custom buttons
+    yes_button = QPushButton(yes_text)
+    no_button = QPushButton(no_text)
+    
+    # Add buttons to message box
+    msg_box.addButton(yes_button, QMessageBox.YesRole)
+    msg_box.addButton(no_button, QMessageBox.NoRole)
+    
+    # Set yes button as default
+    msg_box.setDefaultButton(yes_button)
+    
+    # Show dialog and get result
+    msg_box.exec_()
+    clicked_button = msg_box.clickedButton()
+    
+    # Return boolean based on which button was clicked
+    if clicked_button == yes_button:
+        return True
+    elif clicked_button == no_button:
+        return False
+    else:
+        # Dialog was closed (X button or Escape)
+        return None
 
 def _display_logo(path, label, shape=[50, 50]):
     label.setScaledContents(True)
@@ -168,8 +222,7 @@ def open_information_dialog(microscope: FibsemMicroscope, parent: Optional[QWidg
     msg.exec_()
 
 
-import numpy as np
-import matplotlib.pyplot as plt
+
 
 def create_nested_squares(array_size: int = 1000, 
                           orange_size: int = 800, 
