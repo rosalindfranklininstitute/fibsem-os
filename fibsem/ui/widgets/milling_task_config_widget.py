@@ -73,8 +73,11 @@ class MillingTaskConfigWidget(QWidget):
         # Create content widget that will be scrolled
         content_widget = QWidget()
         layout = QVBoxLayout()
-        layout.setContentsMargins(3, 3, 3, 3)
+        scroll_area.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         content_widget.setLayout(layout)
+        content_widget.setContentsMargins(0, 0, 0, 0)
         scroll_area.setWidget(content_widget)
 
         # Basic settings group
@@ -104,6 +107,7 @@ class MillingTaskConfigWidget(QWidget):
 
         self.basic_group = QCollapsible("Basic Settings", self)
         self.basic_group.addWidget(self.basic_content)
+        self.basic_content.setContentsMargins(0, 0, 0, 0)
         self.basic_group.expand(animate=False)
         self.basic_group.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.basic_group)
@@ -112,6 +116,7 @@ class MillingTaskConfigWidget(QWidget):
         self.alignment_widget = MillingAlignmentWidget(
             show_advanced=self._show_advanced
         )
+        self.alignment_widget.setContentsMargins(0, 0, 0, 0)
         self.alignment_group = QCollapsible("Alignment", self)
         self.alignment_group.addWidget(self.alignment_widget)
         self.alignment_group.expand(animate=False)
@@ -122,6 +127,7 @@ class MillingTaskConfigWidget(QWidget):
         self.acquisition_widget = MillingTaskAcquisitionSettingsWidget(
             show_advanced=self._show_advanced
         )
+        self.acquisition_widget.setContentsMargins(0, 0, 0, 0)
         self.acquisition_group = QCollapsible("Acquisition", self)
         self.acquisition_group.addWidget(self.acquisition_widget)
         self.acquisition_group.expand(animate=False)
@@ -230,6 +236,9 @@ if __name__ == "__main__":
     main_widget = QWidget()
     layout = QVBoxLayout()
     main_widget.setLayout(layout)
+    main_widget.setContentsMargins(0, 0, 0, 0)
+    layout.setContentsMargins(0, 0, 0, 0)
+
 
     # Create the MillingTaskConfig widget
     config_widget = MillingTaskConfigWidget(show_advanced=False)

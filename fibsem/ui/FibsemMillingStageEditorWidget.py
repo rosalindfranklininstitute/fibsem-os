@@ -1,7 +1,7 @@
 import copy
 import logging
 import os
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 
 import napari
 import napari.utils.notifications
@@ -984,13 +984,12 @@ class FibsemMillingStageEditorWidget(QWidget):
                 item = self.list_widget_milling_stages.item(i)
                 # update the text of the item
                 if item:
-                    item.setText(pretty_name(milling_stage))
+                    item.setText(milling_stage.pretty_name)
 
-    def _add_milling_stage(self, milling_stage: FibsemMillingStage = None):
+    def _add_milling_stage(self, milling_stage: Optional[FibsemMillingStage] = None):
         """Add a new milling stage to the editor."""
-        
-        # create a default milling stage if not provided
         if milling_stage is None:
+            # create a default milling stage if not provided
             num = len(self._milling_stages) + 1
             milling_stage = FibsemMillingStage(name=f"Milling Stage {num}", num=num)
 
@@ -1015,7 +1014,7 @@ class FibsemMillingStageEditorWidget(QWidget):
 
         # create related list widget item
         # TODO: migrate to setData, so we can store the milling stage object directly
-        item = QListWidgetItem(pretty_name(milling_stage))
+        item = QListWidgetItem(milling_stage.pretty_name)
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
         item.setCheckState(Qt.Checked)
         self.list_widget_milling_stages.addItem(item)

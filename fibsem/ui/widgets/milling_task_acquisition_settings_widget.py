@@ -46,6 +46,7 @@ class MillingTaskAcquisitionSettingsWidget(QWidget):
         # Image settings widget
         self.image_settings_widget = ImageSettingsWidget(show_advanced=show_advanced)
         layout.addWidget(self.image_settings_widget)
+        # layout.setContentsMargins(5, 5, 5, 5)
 
     def _connect_signals(self):
         """Connect widget signals to their respective handlers."""
