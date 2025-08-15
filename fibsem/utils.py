@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import List, Tuple
 
 
+import requests
 import yaml
+from packaging import version
 from PIL import Image
 
 from fibsem import config as cfg
@@ -531,139 +533,74 @@ def _register_metadata(microscope: FibsemMicroscope, application_software: str, 
     microscope.experiment = experiment
 
 
+def get_pypi_versions(package_name: str = "fibsem") -> List[str]:
+    """Get all available versions from PyPI for the specified package.
+    
+    Args:
+        package_name: Name of the package to check. Defaults to "fibsem".
+        
+    Returns:
+        List of available versions sorted by version number (latest first).
+        Returns empty list if unable to fetch versions.
+    """
+    try:
+        url = f'https://pypi.org/pypi/{package_name}/json'
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        versions = list(data['releases'].keys())
+        # Filter out pre-releases and dev versions for cleaner output
+        stable_versions = [v for v in versions if not any(pre in v.lower() for pre in ['a', 'b', 'rc', 'dev'])]
+        return sorted(stable_versions, key=version.parse, reverse=True)
+    except Exception as e:
+        logging.warning(f'Error fetching PyPI data for {package_name}: {e}')
+        return []
 
 
+def check_for_updates(package_name: str = "fibsem") -> dict:
+    """Check if a newer version of the package is available on PyPI.
+    
+    Args:
+        package_name: Name of the package to check. Defaults to "fibsem".
+        
+    Returns:
+        Dictionary containing:
+        - 'current_version': Currently installed version
+        - 'latest_version': Latest version on PyPI (None if unable to fetch)
+        - 'update_available': Boolean indicating if update is available
+        - 'status': Text description of the status
+    """
+    import fibsem
+    
+    result = {
+        'current_version': fibsem.__version__,
+        'latest_version': None,
+        'update_available': False,
+        'status': 'Unknown'
+    }
+    
+    # Get PyPI versions
+    pypi_versions = get_pypi_versions(package_name)
+    if pypi_versions:
+        result['latest_version'] = pypi_versions[0]
+    
+    # Compare versions
+    if result['latest_version']:
+        try:
+            current_ver = version.parse(result['current_version'])
+            latest_ver = version.parse(result['latest_version'])
+            
+            if current_ver < latest_ver:
+                result['update_available'] = True
+                result['status'] = f'Newer version available: {result["latest_version"]} (you have {result["current_version"]})'
+            elif current_ver == latest_ver:
+                result['status'] = f'You have the latest version: {result["current_version"]}'
+            else:
+                result['status'] = f'You have a newer version than PyPI: {result["current_version"]} > {result["latest_version"]}'
+        except Exception as e:
+            result['status'] = f'Error comparing versions: {e}'
+    else:
+        result['status'] = f'Could not fetch PyPI versions for {package_name}'
+    
+    return result
 
-
-
-
-
-
-################## MIGRATE FROM OLD AUTOLIFTOUT
-# import os
-# from pathlib import Path
-
-# import numpy as np
-# from fibsem.structures import ImageSettings
-
-# def plot_two_images(img1, img2) -> None:
-#     import matplotlib.pyplot as plt
-#     from fibsem.structures import Point
-
-#     c = Point(img1.data.shape[1] // 2, img1.data.shape[0] // 2)
-
-#     fig, ax = plt.subplots(1, 2, figsize=(30, 30))
-#     ax[0].imshow(img1.data, cmap="gray")
-#     ax[0].plot(c.x, c.y, "y+", ms=50, markeredgewidth=2)
-#     ax[1].imshow(img2.data, cmap="gray")
-#     ax[1].plot(c.x, c.y, "y+", ms=50, markeredgewidth=2)
-#     plt.show()
-
-
-# def take_reference_images_and_plot(microscope, image_settings: ImageSettings):
-#     from pprint import pprint
-
-#     from fibsem import acquire
-
-#     eb_image, ib_image = acquire.take_reference_images(microscope, image_settings)
-#     plot_two_images(eb_image, ib_image)
-
-#     return eb_image, ib_image
-
-
-# # cross correlate
-# def crosscorrelate_and_plot(
-#     ref_image,
-#     new_image,
-#     rotate: bool = False,
-#     lp: int = 128,
-#     hp: int = 8,
-#     sigma: int = 6,
-#     ref_mask: np.ndarray = None,
-#     xcorr_limit: int = None
-# ):
-#     import matplotlib.pyplot as plt
-#     import numpy as np
-#     from fibsem import alignment
-#     from fibsem.structures import Point
-#     from fibsem.imaging import utils as image_utils
-
-#     # rotate ref
-#     if rotate:
-#         ref_image = image_utils.rotate_image(ref_image)
-
-#     dx, dy, xcorr = alignment.shift_from_crosscorrelation(
-#         ref_image,
-#         new_image,
-#         lowpass=lp,
-#         highpass=hp,
-#         sigma=sigma,
-#         use_rect_mask=True,
-#         ref_mask=ref_mask,
-#         xcorr_limit=xcorr_limit
-#     )
-
-#     pixelsize = ref_image.metadata.binary_result.pixel_size.x
-#     dx_p, dy_p = int(dx / pixelsize), int(dy / pixelsize)
-
-#     print(f"shift_m: {dx}, {dy}")
-#     print(f"shift_px: {dx_p}, {dy_p}")
-
-#     shift = np.roll(new_image.data, (-dy_p, -dx_p), axis=(0, 1))
-
-#     mid = Point(shift.shape[1] // 2, shift.shape[0] // 2)
-
-#     if ref_mask is None:
-#         ref_mask = np.ones_like(ref_image.data)
-
-#     fig, ax = plt.subplots(1, 4, figsize=(30, 30))
-#     ax[0].imshow(ref_image.data * ref_mask , cmap="gray")
-#     ax[0].plot(mid.x, mid.y, color="lime", marker="+", ms=50, markeredgewidth=2)
-#     ax[0].set_title(f"Reference (rotate={rotate})")
-#     ax[1].imshow(new_image.data, cmap="gray")
-#     ax[1].plot(mid.x, mid.y, color="lime", marker="+", ms=50, markeredgewidth=2)
-#     ax[1].set_title(f"New Image")
-#     ax[2].imshow(xcorr, cmap="turbo")
-#     ax[2].plot(mid.x, mid.y, color="lime", marker="+", ms=50, markeredgewidth=2)
-#     ax[2].plot(mid.x - dx_p, mid.y - dy_p, "m+", ms=50, markeredgewidth=2)
-#     ax[2].set_title("XCORR")
-#     ax[3].imshow(shift, cmap="gray")
-#     ax[3].plot(mid.x, mid.y, color="lime", marker="+", ms=50, markeredgewidth=2, label="new_position")
-#     ax[3].plot(mid.x - dx_p, mid.y - dy_p, "m+", ms=50, markeredgewidth=2, label="old_position")
-#     ax[3].set_title("New Image Shifted")
-#     ax[3].legend()
-#     plt.show()
-
-#     return dx, dy, xcorr
-
-
-# def plot_crosscorrelation(ref_image, new_image, dx, dy, xcorr):
-#     import matplotlib.pyplot as plt
-#     from fibsem.structures import Point
-
-#     pixelsize = ref_image.metadata.binary_result.pixel_size.x
-#     dx_p, dy_p = int(dx / pixelsize), int(dy / pixelsize)
-
-#     print(f"shift_m: {dx}, {dy}")
-#     print(f"shift_px: {dx_p}, {dy_p}")
-
-#     shift = np.roll(new_image.data, (-dy_p, -dx_p), axis=(0, 1))
-
-#     mid = Point(shift.shape[1] // 2, shift.shape[0] // 2)
-
-#     fig, ax = plt.subplots(1, 4, figsize=(30, 30))
-#     ax[0].imshow(ref_image.data, cmap="gray")
-#     ax[0].plot(mid.x, mid.y, color="lime", marker="+", ms=50, markeredgewidth=2)
-#     ax[0].set_title(f"Reference)")
-#     ax[1].imshow(new_image.data, cmap="gray")
-#     ax[1].plot(mid.x, mid.y, color="lime", marker="+", ms=50, markeredgewidth=2)
-#     ax[1].set_title(f"New Image")
-#     ax[2].imshow(xcorr, cmap="turbo")
-#     ax[2].plot(mid.x, mid.y, color="lime", marker="+", ms=50, markeredgewidth=2)
-#     ax[2].plot(mid.x - dx_p, mid.y - dy_p, "m+", ms=50, markeredgewidth=2)
-#     ax[2].set_title("XCORR")
-#     ax[3].imshow(shift, cmap="gray")
-#     ax[3].plot(mid.x, mid.y, color="lime", marker="+", ms=50, markeredgewidth=2)
-#     ax[3].plot(mid.x - dx_p, mid.y - dy_p, "m+", ms=50, markeredgewidth=2)
-#     ax[3].set_title("New Image Shifted")
-#     plt.show()
