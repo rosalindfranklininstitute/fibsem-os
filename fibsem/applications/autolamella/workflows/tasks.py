@@ -47,8 +47,6 @@ from psygnal import Signal, evented
 from fibsem.applications.autolamella.ui import AutoLamellaUI
 from fibsem.applications.autolamella.workflows.core import (
     align_feature_coincident,
-    get_supervision,
-    log_status_message,
     set_images_ui,
     update_alignment_area_ui,
     update_detection_ui,
@@ -76,8 +74,8 @@ from fibsem.structures import (
     ImageSettings,
     Point,
 )
-from fibsem.transformations import is_close_to_milling_angle, move_to_milling_angle
-from fibsem.utils import format_duration
+from fibsem.transformations import move_to_milling_angle
+
 
 TAutoLamellaTaskConfig = TypeVar(
     "TAutoLamellaTaskConfig", bound="AutoLamellaTaskConfig"
@@ -181,7 +179,7 @@ class MillTrenchTask(AutoLamellaTask):
         """Run the task to mill the trench for a lamella."""
 
         # bookkeeping
-        validate = self.config.supervise
+        validate = get_task_supervision(self.task_name)
         image_settings = self.config.imaging
         image_settings.path = self.lamella.path
 
@@ -257,7 +255,7 @@ class MillUndercutTask(AutoLamellaTask):
     def _run(self) -> None:
 
         # bookkeeping
-        validate = self.config.supervise
+        validate = get_task_supervision(self.task_name)
         image_settings = self.config.imaging
         image_settings.path = self.lamella.path
 
@@ -411,7 +409,7 @@ class MillRoughTask(AutoLamellaTask):
         """Run the task to mill the rough trenches for a lamella."""
 
         # bookkeeping
-        validate = self.config.supervise
+        validate = get_task_supervision(self.task_name)
         image_settings = self.config.imaging
         image_settings.path = self.lamella.path
 
@@ -487,7 +485,7 @@ class MillPolishingTask(AutoLamellaTask):
         
         """Run the task to mill the polishing trenches for a lamella."""
         # bookkeeping
-        validate = self.config.supervise
+        validate = get_task_supervision(self.task_name)
         image_settings = self.config.imaging
         image_settings.path = self.lamella.path
 
@@ -563,7 +561,7 @@ class SpotBurnFiducialTask(AutoLamellaTask):
     def _run(self) -> None:
         """Run the task to mill spot fiducial markers for correlation."""
         # bookkeeping
-        validate = self.config.supervise
+        validate = get_task_supervision(self.task_name)
         image_settings = self.config.imaging
         image_settings.path = self.lamella.path
 
@@ -617,8 +615,8 @@ class SetupLamellaTask(AutoLamellaTask):
         """Run the task to setup the lamella for milling."""
 
         # bookkeeping
-        validate = self.config.supervise
-        checkpoint = "autolamella-waffle-20240107.pt" 
+        validate = get_task_supervision(self.task_name)
+        checkpoint = "autolamella-waffle-20240107.pt"
 
         image_settings: ImageSettings = self.config.imaging
         image_settings.path = self.lamella.path
@@ -627,9 +625,7 @@ class SetupLamellaTask(AutoLamellaTask):
         self.update_status_ui("Aligning Lamella...")
 
         milling_angle = self.config.milling_angle
-        is_close = is_close_to_milling_angle(microscope=self.microscope, 
-                                            milling_angle=np.radians(milling_angle),
-                                            atol=ATOL_STAGE_TILT * 2)
+        is_close = self.microscope.is_close_to_milling_angle(milling_angle=milling_angle)
 
         if not is_close and validate:
             current_milling_angle = self.microscope.get_current_milling_angle()
@@ -668,7 +664,7 @@ class SetupLamellaTask(AutoLamellaTask):
 
         # fiducial
         if self.config.use_fiducial:
-            
+
             # mill the fiducial
             self.log_status_message("MILL_FIDUCIAL")
             parent_widget = self.parent_ui.milling_widget if self.parent_ui else None
@@ -680,7 +676,7 @@ class SetupLamellaTask(AutoLamellaTask):
             # get alignment area based on fiducial bounding box
             self.lamella.alignment_area = get_pattern_reduced_area(stage=milling_task.config.stages[0],
                                                             image=FibsemImage.generate_blank_image(hfw=alignment_hfw),
-                                                            expand_percent=20)
+                                                            expand_percent=30)
         else:
             # non-fiducial based alignment
             self.lamella.alignment_area = FibsemRectangle.from_dict(DEFAULT_ALIGNMENT_AREA)
@@ -708,7 +704,7 @@ class SetupLamellaTask(AutoLamellaTask):
         image_settings.autocontrast = True
 
         # take reference images
-        log_status_message(self.lamella, "REFERENCE_IMAGES")
+        self.log_status_message("REFERENCE_IMAGES")
         self.update_status_ui("Acquiring Reference Images...")
         reference_images = acquire.take_set_of_reference_images(
             self.microscope,
@@ -719,6 +715,20 @@ class SetupLamellaTask(AutoLamellaTask):
         set_images_ui(self.parent_ui, reference_images.high_res_eb, reference_images.high_res_ib)
 
         self.lamella.milling_pose = self.microscope.get_microscope_state()
+
+
+def get_task_supervision(task_name: str, 
+                    parent_ui: Optional['AutoLamellaUI'] = None) -> bool:
+    """Get supervision status for a task."""
+    if parent_ui is None:
+        return False
+    if not hasattr(parent_ui, 'experiment') or not hasattr(parent_ui.experiment, 'task_protocol'):
+        logging.warning("Parent UI does not have an experiment or task protocol.")
+        return False
+    if parent_ui.experiment is None or parent_ui.experiment.task_protocol is None:
+        logging.warning("Parent UI experiment task protocol is None.")
+        return False
+    return parent_ui.experiment.task_protocol.get_supervision(task_name)
 
 
 class TaskNotRegisteredError(Exception):
@@ -778,9 +788,40 @@ def run_task(microscope: FibsemMicroscope,
     if task_config is None:
         raise ValueError(f"Task configuration for {task_name} not found in lamella tasks.")
 
-
-    task = task_cls(microscope=microscope, config=task_config, lamella=lamella, parent_ui=parent_ui)
+    task = task_cls(microscope=microscope,
+                    config=task_config,
+                    lamella=lamella,
+                    parent_ui=parent_ui)
     task.run()
+
+def sync_lamella_config_updates(lamella: 'Lamella', parent_ui: Optional[AutoLamellaUI] = None) -> 'Lamella':
+    """Sync config updates from GUI to lamella before processing.
+    
+    This is a placeholder implementation that can be extended to:
+    - Check for pending config updates in the UI
+    - Apply updates to milling parameters, imaging settings, etc.
+    - Validate updates for safety during processing
+    
+    Args:
+        lamella: The lamella to update
+        parent_ui: Parent UI containing updated configurations
+        
+    Returns:
+        Updated lamella with synced configuration
+    """
+    if parent_ui is None:
+        return lamella
+        
+    # TODO: Implement actual config sync logic here
+    # Example areas to sync:
+    # - Milling currents and patterns from UI widgets
+    # - Imaging parameters (HFW, resolution, etc.)
+    # - Task-specific settings from protocol editor
+    # - Lamella-specific overrides
+    
+    logging.debug(f"Config sync check for lamella {lamella.name} (placeholder)")
+    return lamella
+
 
 def run_tasks(microscope: FibsemMicroscope, 
             experiment: 'Experiment', 
@@ -799,6 +840,9 @@ def run_tasks(microscope: FibsemMicroscope,
     """
     for task_name in task_names:
         for lamella in experiment.positions:
+            # Sync config updates from GUI before processing this lamella
+            lamella = sync_lamella_config_updates(lamella, parent_ui)
+            
             if required_lamella and lamella.name not in required_lamella:
                 logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Not in required lamella list.")
                 continue
@@ -808,7 +852,7 @@ def run_tasks(microscope: FibsemMicroscope,
                 logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Already completed.")
                 continue
 
-            # check if this lamella has completed required tasks
+            # check if this lamella has completed required tasks 
             task_requires = experiment.task_protocol.workflow_config.requires(task_name)
             if task_requires and not all(lamella.has_completed_task(req) for req in task_requires):
                 logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Required tasks {task_requires} not completed.")
@@ -829,5 +873,3 @@ def run_tasks(microscope: FibsemMicroscope,
             experiment.save()
     return experiment
 
-
-# TODO: supervision should be handled globally, not per lamella

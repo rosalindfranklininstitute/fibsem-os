@@ -244,12 +244,8 @@ class AutoLamellaWorkflowConfig:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AutoLamellaWorkflowConfig':
-        tasks = [AutoLamellaTaskDescription.from_dict(task) for task in data.get("tasks", [])]
-        return cls(
-            name=data.get("name", ""),
-            description=data.get("description", ""),
-            tasks=tasks
-        )
+        data["tasks"] = [AutoLamellaTaskDescription.from_dict(task) for task in data.get("tasks", [])]
+        return cls(**data)
 
     @property
     def workflow(self) -> List[str]:
@@ -291,6 +287,13 @@ class AutoLamellaWorkflowConfig:
                 return False
         return True
 
+    def get_supervision(self, task_name: str) -> bool:
+        """Check if a task requires supervision."""
+        for task in self.tasks:
+            if task.name == task_name:
+                return task.supervise
+        return False
+
 @evented
 @dataclass
 class AutoLamellaTaskProtocol:
@@ -302,7 +305,7 @@ class AutoLamellaTaskProtocol:
             "tasks": {k: v.to_dict() for k, v in self.task_config.items()},
             "workflow": self.workflow_config.to_dict()
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AutoLamellaTaskProtocol':
         from fibsem.applications.autolamella.workflows.tasks import load_task_config
@@ -315,6 +318,19 @@ class AutoLamellaTaskProtocol:
         with open(filename, 'r') as file:
             data = yaml.safe_load(file)
         return cls.from_dict(data)
+
+    def save(self, filename: str) -> None:
+        """Save the task protocol to a YAML file."""
+        with open(filename, 'w') as file:
+            yaml.safe_dump(self.to_dict(), 
+                           file,
+                           indent=4, 
+                           default_flow_style=False, 
+                           sort_keys=False)
+
+    def get_supervision(self, task_name: str) -> bool:
+        """Check if a task requires supervision."""
+        return self.workflow_config.get_supervision(task_name)
 
 
 @dataclass
@@ -933,6 +949,28 @@ class Experiment:
         self.positions.append(deepcopy(lamella))
         logging.info(f"Added lamella {lamella.name} to experiment {self.name}")
 
+    @classmethod
+    def create(cls, path: Path, name: str = cfg.EXPERIMENT_NAME) -> 'Experiment':
+        """Create a new experiment with the given path and name. Also configures logging.
+        Args:
+            path (Path): The path where the experiment will be created.
+            name (str): The name of the experiment. Defaults to cfg.EXPERIMENT_NAME.
+        Returns:
+                Experiment: The created experiment instance.
+        """
+        # create the experiment
+        experiment = Experiment(path=path, name=name)
+
+        # configure experiment logging
+        os.makedirs(experiment.path, exist_ok=True)
+        configure_logging(path=experiment.path, log_filename="logfile")
+
+        # save the experiment
+        experiment.save()
+
+        logging.info(f"Created new experiment {experiment.name} at {experiment.path}")
+
+        return experiment
 
 ###### TASK REFACTORING ##########
 

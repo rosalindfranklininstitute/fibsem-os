@@ -5,7 +5,6 @@ tasks:
   MILL_TRENCH:
     name: MILL_TRENCH
     description: mill trenches around region of interest at high current
-    supervise: true
     parameters: # dict
       orientation: FIB
       charge_neutralisation: true
@@ -34,7 +33,6 @@ tasks:
   MILL_UNDERCUT:
     name: MILL_UNDERCUT
     description: mill regions underneath the lamella at an oblique angle
-    supervise: true
     parameters: # dict
       milling_angles: [25, 20]
       orientation: SEM
@@ -70,7 +68,6 @@ tasks:
   SETUP_LAMELLA:
     name: SETUP_LAMELLA
     description: select lamella position and milling pattern position
-    supervise: true
     parameters: # dict
       milling_angle: 15 # deg
       use_fiducial: true
@@ -98,7 +95,6 @@ tasks:
   MILL_ROUGH:
     name: MILL_ROUGH
     description: mill rough lamella trenches, and stress relief features
-    supervise: true
     parameters: # dict
     milling:
       stress-relief:
@@ -175,7 +171,6 @@ tasks:
   SPOT_BURN_FIDUCIAL:
     name: SPOT_BURN_FIDUCIAL
     description: mill spot fiducial markers for correlation 
-    supervise: true
     parameters: # dict
       milling_current: 60.0e-12 # A
       exposure_time: 10         # s
@@ -183,7 +178,6 @@ tasks:
   # - name: Fluorescence Acquisition
   #   description: acquire fluorescence image of the lamella
   #   parameters: # dict
-  #     supervise: true
   #     orientation: FM
   #     channels: 
   #       - name: channel-1
@@ -202,7 +196,6 @@ tasks:
   MILL_POLISHING:
     name: MILL_POLISHING
     description: final low current polishing of the lamella
-    supervise: true
     requires: [SETUP_LAMELLA, MILL_ROUGH]
     parameters: # dict
     milling:
