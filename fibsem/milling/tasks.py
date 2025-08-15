@@ -16,7 +16,7 @@ from fibsem.structures import BeamType, FibsemImage, ImageSettings, MillingAlign
 from fibsem.utils import current_timestamp_v3
 
 if TYPE_CHECKING:
-    from fibsem.ui.FibsemMillingWidget import FibsemMillingWidget
+    from fibsem.ui.widgets.milling_task_config_widget import FibsemMillingWidget2
 
 @dataclass
 class MillingTaskAcquisitionSettings:
@@ -106,7 +106,9 @@ class FibsemMillingTask:
     task_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     reference_image: Optional[FibsemImage] = None
 
-    def __init__(self, microscope: FibsemMicroscope, config: FibsemMillingTaskConfig, parent_ui: Optional['FibsemMillingWidget'] = None):
+    def __init__(self, microscope: FibsemMicroscope,
+                 config: FibsemMillingTaskConfig,
+                 parent_ui: Optional['FibsemMillingWidget2'] = None):
         self.config = config
         self.microscope = microscope
         self.parent_ui = parent_ui
@@ -125,7 +127,7 @@ class FibsemMillingTask:
     def _handle_progress(self, ddict: dict) -> None:
         """Handle progress updates from the microscope."""
         if self.parent_ui: # TODO: migrate to ensure_main_thread
-            self.parent_ui.milling_progress_signal.emit(ddict)
+            self.microscope.milling_progress_signal.emit(ddict)
         else:
             logging.info(ddict)
 
@@ -135,7 +137,10 @@ class FibsemMillingTask:
         logging.info(f"Running milling task: {self.name} with ID: {self.task_id}")
 
         try:
-            self.microscope.milling_progress_signal.connect(self._handle_progress)
+            if self.parent_ui:
+                self.microscope.milling_progress_signal.connect(self.parent_ui._on_milling_progress)
+            else:
+                self.microscope.milling_progress_signal.connect(self._handle_progress)
             initial_beam_shift = self.microscope.get_beam_shift(beam_type=self.config.channel)
 
             # acquire a reference image for alignment
@@ -143,63 +148,15 @@ class FibsemMillingTask:
                 self._acquire_reference_image()
 
             for idx, stage in enumerate(self.stages):
-                start_time = time.time()
-                if self.parent_ui:
-                    if self.parent_ui._milling_stop_event.is_set():
-                        raise Exception("Milling stopped by user.")
-
-                msgd =  {"msg": f"Preparing: {stage.name}",
-                        "progress": {"state": "start", 
-                                    "start_time": start_time,
-                                    "current_stage": idx, 
-                                    "total_stages": len(self.stages),
-                                    "task_id": self.task_id,
-                                    "task_name": self.name
-                                    }}
-                self._handle_progress(msgd)
-
-                try:
-                    if self.config.acquisition.enabled:
-                        self._acquire_milling_task_images(stage_name=stage.name, tag="start")
-
-                    # Set up the stage with the task configuration
-                    stage.reference_image = self.reference_image
-                    stage.milling.hfw = self.config.field_of_view
-                    stage.milling.milling_channel = self.config.channel
-                    stage.milling.acquire_images = self.config.acquisition.enabled
-                    stage.alignment = self.config.alignment
-                    stage.strategy.run(
-                        microscope=self.microscope,
-                        stage=stage,
-                        asynch=False,
-                        parent_ui=self.parent_ui,
-                    )
-                    # TODO: pass task as parent into strategy.run()?, allow logging from strategy?
-                    # performance logging
-                    msgd = {"msg": "milling_task",
-                            "task_id": self.task_id,
-                            "task_name": self.name,
-                            "idx": idx,
-                            "stage": stage.to_dict(),
-                            "start_time": start_time,
-                            "end_time": time.time(),
-                            "timestamp": datetime.now().isoformat()}
-                    logging.debug(f"{msgd}")
-
-                    # optionally acquire images after milling
-                    if self.config.acquisition.enabled:
-                        self._acquire_milling_task_images(stage_name=stage.name, tag="finished")
-
-                    if self.parent_ui:
-                        self.parent_ui.milling_progress_signal.emit({"msg": f"Finished: {stage.name}"})
-                except Exception as e:
-                    logging.error(f"Error running milling stage: {stage.name}, {e}")
-
-            self._handle_progress({"msg": f"Finished Milling Task: {self.name}. Restoring Imaging Conditions..."})
+                self._mill_stage(stage, idx)
 
         except Exception as e:
             logging.error(e)
         finally:
+            self._handle_progress({
+                "msg": f"Finished Milling Task: {self.name}. Restoring Imaging Conditions...",
+                "progress": {"state": "finished", "task_id": self.task_id, "task_name": self.name}
+            })
             self.microscope.finish_milling(
                 imaging_current=self.microscope.system.ion.beam.beam_current,
                 imaging_voltage=self.microscope.system.ion.beam.voltage,
@@ -207,7 +164,61 @@ class FibsemMillingTask:
             # restore initial beam shift
             if initial_beam_shift:
                 self.microscope.set_beam_shift(initial_beam_shift, beam_type=self.config.channel)
-            self.microscope.milling_progress_signal.disconnect(self._handle_progress)
+            if self.parent_ui:
+                self.microscope.milling_progress_signal.disconnect(self.parent_ui._on_milling_progress)
+
+    def _mill_stage(self, stage: FibsemMillingStage, idx: int) -> None:
+        """Run a single milling stage with progress updates."""
+
+        start_time = time.time()
+        if self.parent_ui:
+            if self.parent_ui._milling_stop_event.is_set():
+                raise Exception("Milling stopped by user.")
+
+        msgd =  {"msg": f"Preparing: {stage.name}",
+                "progress": {"state": "start", 
+                            "start_time": start_time,
+                            "current_stage": idx, 
+                            "total_stages": len(self.stages),
+                            "task_id": self.task_id,
+                            "task_name": self.name
+                            }}
+        self._handle_progress(msgd)
+
+        try:
+            if self.config.acquisition.enabled:
+                self._acquire_milling_task_images(stage_name=stage.name, tag="start")
+
+            # Set up the stage with the task configuration
+            stage.reference_image = self.reference_image
+            stage.milling.hfw = self.config.field_of_view
+            stage.milling.milling_channel = self.config.channel
+            stage.milling.acquire_images = self.config.acquisition.enabled
+            stage.alignment = self.config.alignment
+            stage.strategy.run(
+                microscope=self.microscope,
+                stage=stage,
+                asynch=False,
+                parent_ui=self.parent_ui,
+            )
+            # TODO: pass task as parent into strategy.run()?, allow logging from strategy?
+            # performance logging
+            msgd = {"msg": "milling_task",
+                    "task_id": self.task_id,
+                    "task_name": self.name,
+                    "idx": idx,
+                    "stage": stage.to_dict(),
+                    "start_time": start_time,
+                    "end_time": time.time(),
+                    "timestamp": datetime.now().isoformat()}
+            logging.debug(f"{msgd}")
+
+            # optionally acquire images after milling
+            if self.config.acquisition.enabled:
+                self._acquire_milling_task_images(stage_name=stage.name, tag="finished")
+
+        except Exception as e:
+            logging.error(f"Error running milling stage: {stage.name}, {e}")
 
     def _acquire_reference_image(self) -> Optional[FibsemImage]:
         """Acquire a reference image for the milling task."""
@@ -260,7 +271,7 @@ class FibsemMillingTask:
 
 def run_milling_task(microscope: FibsemMicroscope, 
                      config: FibsemMillingTaskConfig, 
-                     parent_ui: Optional['FibsemMillingWidget'] = None) -> FibsemMillingTask:
+                     parent_ui: Optional['FibsemMillingWidget2'] = None) -> FibsemMillingTask:
     """Run a milling task with the given configuration."""
     task = FibsemMillingTask(microscope=microscope, 
                              config=config, 

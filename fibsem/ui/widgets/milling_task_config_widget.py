@@ -1,3 +1,4 @@
+import copy
 import datetime
 from typing import Optional
 
@@ -12,8 +13,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-import copy
-from superqt import QCollapsible
+from superqt import QCollapsible, QIconifyIcon
 
 from fibsem import utils
 from fibsem.constants import MICRO_TO_SI, SI_TO_MICRO
@@ -25,6 +25,7 @@ from fibsem.ui.widgets.milling_stage_editor_widget import FibsemMillingStageEdit
 from fibsem.ui.widgets.milling_task_acquisition_settings_widget import (
     MillingTaskAcquisitionSettingsWidget,
 )
+from fibsem.ui.widgets.milling_widget import FibsemMillingWidget2
 
 # GUI Configuration Constants
 WIDGET_CONFIG = {
@@ -50,9 +51,11 @@ class MillingTaskConfigWidget(QWidget):
     """
 
     settings_changed = pyqtSignal(FibsemMillingTaskConfig)
+    milling_progress_signal = pyqtSignal(dict)
 
     def __init__(self, microscope: FibsemMicroscope, 
-                 milling_task_config: Optional[FibsemMillingTaskConfig] = None, 
+                 milling_task_config: Optional[FibsemMillingTaskConfig] = None,
+                 milling_enabled: bool = True,
                  parent: Optional[QWidget] = None):
         """Initialize the MillingTaskConfig widget.
 
@@ -63,6 +66,7 @@ class MillingTaskConfigWidget(QWidget):
         super().__init__(parent)
         self.microscope = microscope
         self._show_advanced = False
+        self._milling_enabled = milling_enabled
         self._settings = milling_task_config or FibsemMillingTaskConfig()
         self._setup_ui()
         self.update_from_settings(self._settings)
@@ -74,11 +78,9 @@ class MillingTaskConfigWidget(QWidget):
         Creates a scroll area containing a vertical layout with basic settings at the top,
         followed by alignment and acquisition settings in group boxes.
         """
-        # Main layout for the widget
+        
         main_layout = QVBoxLayout()
         self.setLayout(main_layout)
-        
-        # Create scroll area
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         main_layout.addWidget(scroll_area)
@@ -150,13 +152,11 @@ class MillingTaskConfigWidget(QWidget):
         self.acquisition_group.expand(animate=False)
         self.acquisition_group.setContentsMargins(0, 0, 0, 0)
 
-        # Add stretch to push everything to the top
-
+        # Milling stages editor
         self.milling_editor_widget = FibsemMillingStageEditorWidget(
             viewer=napari.current_viewer(),
             microscope=self.microscope,
-            milling_stages=[FibsemMillingStage(name="Milling Stage 1"), 
-                            FibsemMillingStage(name="Milling Stage 2")],
+            milling_stages=[],
             parent=self
         )
         self.milling_editor_widget.setContentsMargins(0, 0, 0, 0)
@@ -176,6 +176,14 @@ class MillingTaskConfigWidget(QWidget):
         # viewer is used to display the milling stages
         # could we do this at a higher level and just subscribe to the settings_changed signal?
         layout.addStretch()
+
+        self.milling_widget = FibsemMillingWidget2(
+            microscope=self.microscope,
+            parent=self
+        )
+        layout.addWidget(self.milling_widget)
+        self.milling_widget.setVisible(self._milling_enabled)
+        # layout.addStretch()
 
     def _connect_signals(self):
         """Connect widget signals to their respective handlers.
@@ -261,33 +269,41 @@ class MillingTaskConfigWidget(QWidget):
 
 
 
-
 if __name__ == "__main__":
 
-    # app = QApplication(sys.argv)
+    import os
+    from pathlib import Path
+
     import napari
+    from PyQt5.QtWidgets import QTabWidget, QWidget
+
+    from fibsem.applications.autolamella.structures import AutoLamellaProtocol, Experiment
 
     viewer = napari.Viewer()
-    # Create main window
-    main_widget = QWidget()
+    main_widget = QTabWidget()
+
+    # set tab to side
+    # main_widget.setTabPosition(QTabWidget.West)
+    qwidget = QWidget()
+    icon1 = QIconifyIcon("material-symbols:experiment", color="white")
+    main_widget.addTab(qwidget, icon1, "Experiment")
+    # main_widget.addTab(, "Milling Task Config Test")
     layout = QVBoxLayout()
-    main_widget.setLayout(layout)
-    main_widget.setContentsMargins(0, 0, 0, 0)
+    qwidget.setLayout(layout)
+    qwidget.setContentsMargins(0, 0, 0, 0)
     layout.setContentsMargins(0, 0, 0, 0)
 
     microscope, settings = utils.setup_session()
-    from fibsem.applications.autolamella.structures import AutoLamellaProtocol, Experiment
 
-    import os
     BASE_PATH = "/home/patrick/github/autolamella/autolamella/log/AutoLamella-2025-05-28-17-22/"
-    EXPERIMENT_PATH = os.path.join(BASE_PATH, "experiment.yaml")
-    PROTOCOL_PATH = os.path.join(BASE_PATH, "protocol.yaml")
+    EXPERIMENT_PATH = Path(os.path.join(BASE_PATH, "experiment.yaml"))
+    PROTOCOL_PATH = Path(os.path.join(BASE_PATH, "protocol.yaml"))
     exp = Experiment.load(EXPERIMENT_PATH)
     protocol = AutoLamellaProtocol.load(PROTOCOL_PATH)
 
-    milling_task_config = FibsemMillingTaskConfig(
-        name="Test Milling Task",
-        field_of_view=150.0 * MICRO_TO_SI,  # Convert μm
+    milling_task_config = FibsemMillingTaskConfig.from_stages(
+        # name="Test Milling Task",
+        # field_of_view=150.0 * MICRO_TO_SI,  # Convert μm
         stages=exp.positions[0].milling_workflows["mill_rough"],  # type: ignore
     )
 

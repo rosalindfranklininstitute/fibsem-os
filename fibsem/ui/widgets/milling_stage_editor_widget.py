@@ -1,7 +1,7 @@
 import copy
 import logging
 import os
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import napari
 import napari.utils.notifications
@@ -12,37 +12,32 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
-    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
-    QMainWindow,
 )
 from superqt import QCollapsible
+
 from fibsem import config as cfg
 from fibsem import conversions, utils
 from fibsem.microscope import FibsemMicroscope
 from fibsem.milling import (
     FibsemMillingStage,
-    get_milling_stages,
-    get_protocol_from_stages,
     get_strategy,
-)
-from fibsem.milling.patterning.patterns2 import (
-    BasePattern,
-    LinePattern,
-    TrenchPattern,
 )
 from fibsem.milling.patterning import (
     MILLING_PATTERN_NAMES,
     get_pattern,
+)
+from fibsem.milling.patterning.patterns2 import (
+    BasePattern,
+    LinePattern,
 )
 from fibsem.milling.strategy import (
     MillingStrategy,
@@ -288,7 +283,7 @@ MILLING_IMAGING_GUI_CONFIG = {
     },
 }
 
-DEFAULT_PARAMETERS: Dict[str, any] = {
+DEFAULT_PARAMETERS: Dict[str, Any] = {
     "type": float,
     "units": "µm",
     "scale": 1e6,
@@ -345,6 +340,8 @@ class FibsemMillingStageWidget(QWidget):
 
         self._create_widgets()
         self._initialise_widgets()
+        self.setContentsMargins(0, 0, 0, 0)
+        self.layout().setContentsMargins(0, 0, 0, 0)
 
     def _create_widgets(self):
         """Create the main widgets for the milling stage editor."""
@@ -749,7 +746,7 @@ class FibsemMillingStageEditorWidget(QWidget):
 
         self.viewer = viewer
         self.image: FibsemImage = FibsemImage.generate_blank_image(hfw=80e-6)
-        self.image_layer: NapariImageLayer = self.viewer.add_image(data=self.image.data, name="FIB Image")
+        self.image_layer: NapariImageLayer = self.viewer.add_image(data=self.image.data, name="FIB Image") # type: ignore
         self._widgets: List[FibsemMillingStageWidget] = []
 
         # add widget for scroll content
@@ -781,25 +778,6 @@ class FibsemMillingStageEditorWidget(QWidget):
         button_layout.addWidget(self.pushButton_add)
         button_layout.addWidget(self.pushButton_remove)
 
-        # clear/set milling stages buttons (for development mode)
-        DEVELOPMENT_MODE = False
-        if DEVELOPMENT_MODE:
-            self._tmp_milling_stages = copy.deepcopy(milling_stages)
-            pushButton_add = QPushButton("Set Milling Stages", self)
-            pushButton_add.clicked.connect(lambda: self.set_milling_stages(self._tmp_milling_stages))
-            pushButton_add.setStyleSheet(stylesheets.BLUE_PUSHBUTTON_STYLE)
-            pushButton_remove = QPushButton("Clear Milling Stages", self)
-            pushButton_remove.clicked.connect(self.clear_milling_stages)
-            pushButton_remove.setStyleSheet(stylesheets.ORANGE_PUSHBUTTON_STYLE)
-
-            pushButton_show = QPushButton("Show Milling Stages", self)
-            pushButton_show.setStyleSheet(stylesheets.BLUE_PUSHBUTTON_STYLE)
-            pushButton_show.clicked.connect(self.update_milling_stage_display)
-
-            button_layout2 = QHBoxLayout()
-            button_layout2.addWidget(pushButton_add)
-            button_layout2.addWidget(pushButton_remove)
-
         # add checkboxes for show advanced settings, show milling crosshair, show milling patterns
         self.checkBox_show_milling_crosshair = QCheckBox("Show Milling Crosshair", self)
         self.checkBox_show_milling_crosshair.setChecked(True)
@@ -813,7 +791,7 @@ class FibsemMillingStageEditorWidget(QWidget):
         # # callbacks for checkboxes
         # self.checkBox_show_milling_crosshair.stateChanged.connect(self.update_milling_stage_display)
         # self.checkBox_show_milling_patterns.stateChanged.connect(self._toggle_pattern_visibility)
-        
+
         # grid layout for checkboxes
         self._grid_layout_checkboxes = QGridLayout()
         self._grid_layout_checkboxes.addWidget(self.checkBox_show_milling_patterns, 0, 0, 1, 1)
@@ -823,9 +801,6 @@ class FibsemMillingStageEditorWidget(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.addWidget(self.milling_stage_content)
         self.main_layout.addLayout(button_layout)
-        if DEVELOPMENT_MODE:
-            self.main_layout.addLayout(button_layout2)
-            self.main_layout.addWidget(pushButton_show)
         self.main_layout.addLayout(self._grid_layout_checkboxes)
         self.main_layout.addWidget(self.list_widget_milling_stages)
 
@@ -1039,7 +1014,7 @@ class FibsemMillingStageEditorWidget(QWidget):
             self.milling_pattern_layers = []
             return
 
-        logging.info(f"Selected milling stages:, {[stage.name for stage in milling_stages]}")
+        logging.info(f"Selected milling stages: {[stage.name for stage in milling_stages]}")
 
         if self.image is None:
             image = FibsemImage.generate_blank_image(hfw=milling_stages[0].milling.hfw)
@@ -1167,182 +1142,6 @@ class FibsemMillingStageEditorWidget(QWidget):
         self._milling_stages_updated.emit(milling_stages)
 
 
-from fibsem.applications.autolamella.structures import AutoLamellaProtocol, Experiment, Lamella
-# TODO: move to autolamella
-class AutoLamellaProtocolEditorWidget(QWidget):
-    """A widget to edit the AutoLamella protocol."""
-    
-    def __init__(self, 
-                 viewer: napari.Viewer,
-                 microscope: FibsemMicroscope,
-                 protocol: AutoLamellaProtocol,
-                 experiment: Experiment = None,
-                 parent=None):
-        super().__init__(parent)
-        self.parent = parent
-        self.viewer = viewer
-        self.microscope = microscope
-        self.experiment = experiment
-        self.protocol = protocol
-        self.background_milling_stages: List[FibsemMillingStage] = []
-
-        self.setWindowTitle("AutoLamella Protocol Editor")
-        self._create_widgets()
-        self._initialise_widgets()
-
-    def _create_widgets(self):
-        """Create the widgets for the protocol editor."""
-        self.milling_stage_editor = FibsemMillingStageEditorWidget(viewer=self.viewer, 
-                                                            microscope=self.microscope, 
-                                                            milling_stages=[],
-                                                            parent=self)
-        # lamella, milling controls
-        self.label_selected_lamella = QLabel("Lamella")
-        self.comboBox_selected_lamella = QComboBox()
-        self.label_selected_milling = QLabel("Milling Stage")
-        self.comboBox_selected_milling = QComboBox()
-        self.checkbox_sync_positions = QCheckBox("Sync Trench Position for Rough Milling and Polishing")
-        self.checkbox_sync_positions.setToolTip("If checked, the trench position will be synchronized for rough milling and polishing stages.")
-        self.checkbox_sync_positions.setObjectName("checkbox-sync-positions")
-        self.checkbox_sync_positions.setChecked(True)
-        
-        self.grid_layout = QGridLayout()
-        self.grid_layout.addWidget(self.label_selected_lamella, 0, 0)
-        self.grid_layout.addWidget(self.comboBox_selected_lamella, 0, 1)
-        self.grid_layout.addWidget(self.label_selected_milling, 1, 0)
-        self.grid_layout.addWidget(self.comboBox_selected_milling, 1, 1)
-        self.grid_layout.addWidget(self.checkbox_sync_positions, 2, 0, 1, 2)
-
-        # main layout
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.addWidget(self.milling_stage_editor)
-        self.main_layout.addLayout(self.grid_layout)
-
-    def _initialise_widgets(self):
-        if self.experiment is not None:
-            for pos in self.experiment.positions:
-                self.comboBox_selected_lamella.addItem(pos.name, pos)
-        
-        for k in self.protocol.milling.keys():
-            self.comboBox_selected_milling.addItem(k)
-
-        self.comboBox_selected_lamella.currentIndexChanged.connect(self._on_selected_lamella_changed)
-        self.comboBox_selected_milling.currentIndexChanged.connect(self._on_selected_milling_stage_changed)
-        self.milling_stage_editor._milling_stages_updated.connect(self._on_milling_stages_updated)
-        self.milling_stage_editor.scroll_area.setMinimumHeight(550)
-
-        if self.experiment is not None:
-            self._on_selected_lamella_changed()
-        else:
-            self.label_selected_lamella.setVisible(False)
-            self.comboBox_selected_lamella.setVisible(False)
-            self.image = FibsemImage.generate_blank_image(hfw=80e-6, random=True)
-            self.milling_stage_editor.set_image(self.image)
-            self._on_selected_milling_stage_changed()
-
-    def _on_selected_lamella_changed(self):
-        """Callback when the selected lamella changes."""
-        selected_lamella: Lamella = self.comboBox_selected_lamella.currentData()
-
-        reference_image_path = os.path.join(selected_lamella.path, "ref_PositionReady.tif")
-        if os.path.exists(reference_image_path):
-           self.image = FibsemImage.load(reference_image_path)
-        else:
-            logging.warning(f"Reference image not found at {reference_image_path}. Generating blank image.")
-            self.image = FibsemImage.generate_blank_image(hfw=150e-6, random=True)
-
-        self.milling_stage_editor.set_image(self.image)
-        self._on_selected_milling_stage_changed()
-
-    def _on_selected_milling_stage_changed(self):
-        """Callback when the selected milling stage changes."""
-        selected_stage_name = self.comboBox_selected_milling.currentText()
-        
-        self.background_milling_stages = []
-        if self.experiment is not None:
-            selected_lamella: Lamella = self.comboBox_selected_lamella.currentData()
-            protocol =  selected_lamella.protocol
-            milling_stages = get_milling_stages(selected_stage_name, protocol)
-            self._get_background_milling_stages(selected_stage_name, protocol)
-        else:
-            milling_stages = self.protocol.milling[selected_stage_name]
-            for k, ms in self.protocol.milling.items():
-                if k == selected_stage_name:
-                    continue
-                self.background_milling_stages.extend(ms)
-            self.image = FibsemImage.generate_blank_image(hfw=milling_stages[0].milling.hfw, random=True)
-            self.milling_stage_editor.set_image(self.image)
-
-        self.milling_stage_editor.set_background_milling_stages(self.background_milling_stages)
-        self.milling_stage_editor.set_milling_stages(milling_stages)
-
-    def _get_background_milling_stages(self, stage_name: str, protocol: Dict[str, List]) -> List[FibsemMillingStage]:
-        """Get the background (non-selected) milling stages for a given stage name."""
-        self.background_milling_stages = []
-        other_keys = [k for k in protocol.keys() if k != stage_name]
-        for k in other_keys:
-            self.background_milling_stages.extend(get_milling_stages(k, protocol))
-
-    def _on_milling_stages_updated(self, milling_stages: List[FibsemMillingStage]):
-        """Callback when the milling stages are updated."""
-
-        pprotocol = get_protocol_from_stages(milling_stages)
-
-        selected_stage_name = self.comboBox_selected_milling.currentText()
-
-        if self.experiment is None:
-            self.protocol.milling[selected_stage_name] = copy.deepcopy(milling_stages)
-            return
-
-        # idx = self.comboBox_selected_lamella.currentIndex()
-        selected_lamella: Lamella = self.comboBox_selected_lamella.currentData()
-        selected_lamella.protocol[selected_stage_name] = copy.deepcopy(pprotocol)
-
-        # NOTE: this sync is awful, but it is a quick fix to sync the trench position
-        # ideally, we want to display both rough/polsihing at the same time, and allow the user to edit them both
-        # but need to migrate to tree-widget or similar to allow for multi-stage editing
-        # leaving this for now
-        point = None
-        for ms in milling_stages:
-            if isinstance(ms.pattern, TrenchPattern):
-                point = ms.pattern.point
-                break
-
-        if point is None:
-            logging.warning("No trench pattern found in the milling stages. Cannot sync positions.")
-
-        # DONT SYNC POLISHING -> ROUGH, ONLY ROUGH -> POLISHING?        
-        sync_positions = self.checkbox_sync_positions.isChecked()
-        if sync_positions and point is not None:
-            if selected_stage_name == "mill_rough":
-                for ms in selected_lamella.protocol["mill_polishing"]:
-                    if ms["pattern"]["name"] == TrenchPattern.name:
-                        ms["pattern"]["point"] = copy.deepcopy(point.to_dict())
-                        logging.info(f"Syncing polishing pattern {ms['name']} point to {point}")
-
-
-        # save the experiment
-        self.experiment.save()
-
-        # update the main ui??? DO WE NEED TO DO THIS?
-        # reference seems to go through?, maybe just refresh ui?
-        # NOTE: this causes a de-sync if the workflow is running, 
-        # we need to save the experiment to disk, then reload in the main ui / workflow thread
-        # otherwise we get these weird desync issues
-        if self.parent is not None and not self.parent.WORKFLOW_IS_RUNNING: 
-            self.parent.update_experiment_signal.emit(self.experiment)
-
-        # reset the background milling stages, force refresh ui
-        self._get_background_milling_stages(selected_stage_name, selected_lamella.protocol)
-        self.milling_stage_editor.set_background_milling_stages(self.background_milling_stages)
-        self.milling_stage_editor.update_milling_stage_display()
-
-        # TODO: this causes a double update, need to fix this
-
-
-
-
-
 def show_milling_stage_editor(viewer: napari.Viewer, 
                               microscope: FibsemMicroscope,
                               milling_stages: List[FibsemMillingStage],
@@ -1357,28 +1156,15 @@ def show_milling_stage_editor(viewer: napari.Viewer,
     napari.run(max_loop_level=2)
     return widget
 
-
 # NOTE: milling stages cannot have the same name, because we use them as a key!!
-
-
-def show_protocol_editor(viewer: napari.Viewer, 
-                         microscope: FibsemMicroscope, 
-                         protocol: AutoLamellaProtocol, 
-                         experiment: Experiment = None, 
-                         parent: QWidget = None):
-    """Show the AutoLamella protocol editor widget."""
-    widget = AutoLamellaProtocolEditorWidget(viewer=viewer, 
-                                             microscope=microscope, 
-                                             experiment=experiment, 
-                                             protocol=protocol, 
-                                             parent=parent)
-    viewer.window.add_dock_widget(widget, area='right', name='AutoLamella Protocol Editor')
-    napari.run(max_loop_level=2)
-    return widget
 
 if __name__ == "__main__":
     
-    from fibsem.applications.autolamella.structures import AutoLamellaProtocol
+    from fibsem import utils
+    from fibsem.applications.autolamella.structures import (
+        AutoLamellaProtocol,
+        Experiment,
+    )
 
     microscope, settings = utils.setup_session()
     viewer = napari.Viewer()
@@ -1389,11 +1175,6 @@ if __name__ == "__main__":
     PROTOCOL_PATH = os.path.join(BASE_PATH, "protocol.yaml")
     exp = Experiment.load(EXPERIMENT_PATH)
     protocol = AutoLamellaProtocol.load(PROTOCOL_PATH)
-
-    # widget=show_protocol_editor(viewer=viewer,
-    #                      microscope=microscope, 
-    #                      experiment=exp, 
-    #                      protocol=protocol)
 
     widget = show_milling_stage_editor(viewer=viewer, 
                                        microscope=microscope,

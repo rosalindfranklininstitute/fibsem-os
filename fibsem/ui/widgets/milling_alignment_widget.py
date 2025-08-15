@@ -1,5 +1,5 @@
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QCheckBox, QLabel, QSpinBox, QGridLayout, QWidget
+from PyQt5.QtWidgets import QCheckBox, QGridLayout, QLabel, QSpinBox, QWidget
 
 from fibsem.structures import MillingAlignment
 
@@ -50,7 +50,6 @@ class MillingAlignmentWidget(QWidget):
         but will be hidden based on show_advanced flag.
         """
         layout = QGridLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(layout)
 
         # Enabled checkbox
@@ -223,50 +222,3 @@ class MillingAlignmentWidget(QWidget):
         return self._show_advanced
 
 
-if __name__ == "__main__":
-    import sys
-    from PyQt5.QtWidgets import QApplication, QPushButton, QVBoxLayout
-
-    app = QApplication(sys.argv)
-
-    # Create main window
-    main_widget = QWidget()
-    layout = QVBoxLayout()
-    main_widget.setLayout(layout)
-
-    # Create the MillingAlignment widget
-    alignment_widget = MillingAlignmentWidget(show_advanced=False)
-    layout.addWidget(alignment_widget)
-
-    # Add advanced settings toggle checkbox
-    from PyQt5.QtWidgets import QCheckBox as TestCheckBox
-    advanced_checkbox = TestCheckBox("Show Advanced Settings")
-    advanced_checkbox.setChecked(alignment_widget.get_show_advanced())
-    advanced_checkbox.toggled.connect(alignment_widget.set_show_advanced)
-    layout.addWidget(advanced_checkbox)
-
-    # Add a button to print current settings
-    def print_settings():
-        settings = alignment_widget.get_settings()
-        print("Current MillingAlignment:")
-        print(f"  enabled: {settings.enabled}")
-        print(f"  interval_enabled: {settings.interval_enabled}")
-        print(f"  interval: {settings.interval}")
-        print(f"  rect: {settings.rect}")
-
-    print_button = QPushButton("Print Current Settings")
-    print_button.clicked.connect(print_settings)
-    layout.addWidget(print_button)
-
-    # Connect to settings change signal
-    def on_settings_changed(settings: MillingAlignment):
-        print(
-            f"Settings changed - enabled: {settings.enabled}, interval: {settings.interval}"
-        )
-
-    alignment_widget.settings_changed.connect(on_settings_changed)
-
-    main_widget.setWindowTitle("MillingAlignment Widget Test")
-    main_widget.show()
-
-    sys.exit(app.exec_())
