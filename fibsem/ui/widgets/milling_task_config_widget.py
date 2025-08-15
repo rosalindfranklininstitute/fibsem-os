@@ -1,18 +1,27 @@
+import datetime
+from typing import Optional
+
+import napari
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QDoubleSpinBox,
     QGridLayout,
     QLabel,
     QLineEdit,
-    QDoubleSpinBox,
     QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
+import copy
 from superqt import QCollapsible
 
+from fibsem import utils
+from fibsem.constants import MICRO_TO_SI, SI_TO_MICRO
+from fibsem.microscope import FibsemMicroscope
+from fibsem.milling import FibsemMillingStage
 from fibsem.milling.tasks import FibsemMillingTaskConfig
-from fibsem.constants import SI_TO_MICRO, MICRO_TO_SI
 from fibsem.ui.widgets.milling_alignment_widget import MillingAlignmentWidget
+from fibsem.ui.widgets.milling_stage_editor_widget import FibsemMillingStageEditorWidget
 from fibsem.ui.widgets.milling_task_acquisition_settings_widget import (
     MillingTaskAcquisitionSettingsWidget,
 )
@@ -26,6 +35,8 @@ WIDGET_CONFIG = {
         "step": 5.0,
         "default": 150.0,
         "suffix": " μm",
+        "tooltip": "Field of view in micrometers (μm)",
+        "keyboard_tracking": False,
     },
 }
 
@@ -40,7 +51,9 @@ class MillingTaskConfigWidget(QWidget):
 
     settings_changed = pyqtSignal(FibsemMillingTaskConfig)
 
-    def __init__(self, parent=None, show_advanced=False):
+    def __init__(self, microscope: FibsemMicroscope, 
+                 milling_task_config: Optional[FibsemMillingTaskConfig] = None, 
+                 parent: Optional[QWidget] = None):
         """Initialize the MillingTaskConfig widget.
 
         Args:
@@ -48,8 +61,9 @@ class MillingTaskConfigWidget(QWidget):
             show_advanced: Whether to show advanced settings in sub-widgets
         """
         super().__init__(parent)
-        self._settings = FibsemMillingTaskConfig()
-        self._show_advanced = show_advanced
+        self.microscope = microscope
+        self._show_advanced = False
+        self._settings = milling_task_config or FibsemMillingTaskConfig()
         self._setup_ui()
         self.update_from_settings(self._settings)
         self._connect_signals()
@@ -62,7 +76,6 @@ class MillingTaskConfigWidget(QWidget):
         """
         # Main layout for the widget
         main_layout = QVBoxLayout()
-        # main_layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(main_layout)
         
         # Create scroll area
@@ -79,6 +92,8 @@ class MillingTaskConfigWidget(QWidget):
         content_widget.setLayout(layout)
         content_widget.setContentsMargins(0, 0, 0, 0)
         scroll_area.setWidget(content_widget)
+
+        # EXTRACT INTO SEPARATE WIDGET
 
         # Basic settings group
         self.basic_content = QWidget()
@@ -103,14 +118,17 @@ class MillingTaskConfigWidget(QWidget):
         self.field_of_view_spinbox.setSingleStep(fov_config["step"])
         self.field_of_view_spinbox.setValue(fov_config["default"])
         self.field_of_view_spinbox.setSuffix(fov_config["suffix"])
+        self.field_of_view_spinbox.setToolTip(fov_config["tooltip"])
+        self.field_of_view_spinbox.setKeyboardTracking(fov_config["keyboard_tracking"])
         basic_layout.addWidget(self.field_of_view_spinbox, 1, 1)
 
-        self.basic_group = QCollapsible("Basic Settings", self)
-        self.basic_group.addWidget(self.basic_content)
+        self.task_group = QCollapsible("Milling Task", self)
+        self.task_group.addWidget(self.basic_content)
         self.basic_content.setContentsMargins(0, 0, 0, 0)
-        self.basic_group.expand(animate=False)
-        self.basic_group.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.basic_group)
+        self.task_group.expand(animate=False)
+        self.task_group.setContentsMargins(0, 0, 0, 0)
+
+        ############
 
         # Alignment settings group
         self.alignment_widget = MillingAlignmentWidget(
@@ -121,7 +139,6 @@ class MillingTaskConfigWidget(QWidget):
         self.alignment_group.addWidget(self.alignment_widget)
         self.alignment_group.expand(animate=False)
         self.alignment_group.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.alignment_group)
 
         # Acquisition settings group
         self.acquisition_widget = MillingTaskAcquisitionSettingsWidget(
@@ -132,24 +149,33 @@ class MillingTaskConfigWidget(QWidget):
         self.acquisition_group.addWidget(self.acquisition_widget)
         self.acquisition_group.expand(animate=False)
         self.acquisition_group.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.acquisition_group)
 
         # Add stretch to push everything to the top
-        layout.addStretch()
 
-        from fibsem import utils
-        import napari
-        microscope, settings = utils.setup_session()
+        self.milling_editor_widget = FibsemMillingStageEditorWidget(
+            viewer=napari.current_viewer(),
+            microscope=self.microscope,
+            milling_stages=[FibsemMillingStage(name="Milling Stage 1"), 
+                            FibsemMillingStage(name="Milling Stage 2")],
+            parent=self
+        )
+        self.milling_editor_widget.setContentsMargins(0, 0, 0, 0)
+        self.miling_group = QCollapsible("Milling Stages", self)
+        self.miling_group.addWidget(self.milling_editor_widget)
+        self.miling_group.expand(animate=False)
+        self.miling_group.setContentsMargins(0, 0, 0, 0)
 
-        stage_editor = FibsemMillingStageEditorWidget(viewer=napari.current_viewer(), microscope=microscope, milling_stages=[], parent=main_widget)
-        layout.addWidget(stage_editor)
+        layout.addWidget(self.task_group)
+        layout.addWidget(self.alignment_group)
+        layout.addWidget(self.acquisition_group)
+        layout.addWidget(self.miling_group)
 
         # NOTES: shouldn't know anything about viewer, or microscope
         # only need microscope to get 'dynamic' values such as milling current
         # should make this 'optional' and pass in from parent
         # viewer is used to display the milling stages
         # could we do this at a higher level and just subscribe to the settings_changed signal?
-
+        layout.addStretch()
 
     def _connect_signals(self):
         """Connect widget signals to their respective handlers.
@@ -161,6 +187,7 @@ class MillingTaskConfigWidget(QWidget):
         self.field_of_view_spinbox.valueChanged.connect(self._emit_settings_changed)
         self.alignment_widget.settings_changed.connect(self._emit_settings_changed)
         self.acquisition_widget.settings_changed.connect(self._emit_settings_changed)
+        self.milling_editor_widget._milling_stages_updated.connect(self._emit_settings_changed)
 
     def _emit_settings_changed(self):
         """Emit the settings_changed signal with current settings.
@@ -176,17 +203,12 @@ class MillingTaskConfigWidget(QWidget):
 
         Returns:
             FibsemMillingTaskConfig object with values from the UI controls.
-            Updates only the fields controlled by this widget, preserving
-            all other fields from the stored settings (like stages).
         """
-        # Update only the fields controlled by this widget
         self._settings.name = self.name_edit.text()
-        self._settings.field_of_view = (
-            self.field_of_view_spinbox.value() * MICRO_TO_SI
-        )  # Convert μm to m
+        self._settings.field_of_view = self.field_of_view_spinbox.value() * MICRO_TO_SI
         self._settings.alignment = self.alignment_widget.get_settings()
         self._settings.acquisition = self.acquisition_widget.get_settings()
-        # channel and stages are preserved as-is (ignored as requested)
+        self._settings.stages = self.milling_editor_widget.get_milling_stages()
 
         return self._settings
 
@@ -197,20 +219,17 @@ class MillingTaskConfigWidget(QWidget):
             settings: FibsemMillingTaskConfig object to load values from.
                      All basic controls and sub-widgets are updated from the settings.
         """
-        self._settings = settings
-
         # Block signals to prevent recursive updates
         self.blockSignals(True)
 
         self.name_edit.setText(settings.name)
-        self.field_of_view_spinbox.setValue(
-            settings.field_of_view * SI_TO_MICRO
-        )  # Convert m to μm
-
+        self.field_of_view_spinbox.setValue(settings.field_of_view * SI_TO_MICRO)
         # Update sub-widgets
         self.alignment_widget.update_from_settings(settings.alignment)
         self.acquisition_widget.update_from_settings(settings.acquisition)
+        self.milling_editor_widget.update_from_settings(settings.stages)
 
+        self._settings = copy.deepcopy(settings)
         self.blockSignals(False)
 
     def set_show_advanced(self, show_advanced: bool):
@@ -222,6 +241,7 @@ class MillingTaskConfigWidget(QWidget):
         self._show_advanced = show_advanced
         self.alignment_widget.set_show_advanced(show_advanced)
         self.acquisition_widget.set_show_advanced(show_advanced)
+        self.milling_editor_widget.set_show_advanced(show_advanced)
 
     def toggle_advanced(self):
         """Toggle the visibility of advanced settings in sub-widgets.
@@ -241,14 +261,12 @@ class MillingTaskConfigWidget(QWidget):
 
 
 
-from fibsem.ui.FibsemMillingStageEditorWidget import FibsemMillingStageEditorWidget
 
 if __name__ == "__main__":
-    import sys
-    from PyQt5.QtWidgets import QApplication, QPushButton, QCheckBox
 
     # app = QApplication(sys.argv)
     import napari
+
     viewer = napari.Viewer()
     # Create main window
     main_widget = QWidget()
@@ -257,45 +275,49 @@ if __name__ == "__main__":
     main_widget.setContentsMargins(0, 0, 0, 0)
     layout.setContentsMargins(0, 0, 0, 0)
 
+    microscope, settings = utils.setup_session()
+    from fibsem.applications.autolamella.structures import AutoLamellaProtocol, Experiment
+
+    import os
+    BASE_PATH = "/home/patrick/github/autolamella/autolamella/log/AutoLamella-2025-05-28-17-22/"
+    EXPERIMENT_PATH = os.path.join(BASE_PATH, "experiment.yaml")
+    PROTOCOL_PATH = os.path.join(BASE_PATH, "protocol.yaml")
+    exp = Experiment.load(EXPERIMENT_PATH)
+    protocol = AutoLamellaProtocol.load(PROTOCOL_PATH)
+
+    milling_task_config = FibsemMillingTaskConfig(
+        name="Test Milling Task",
+        field_of_view=150.0 * MICRO_TO_SI,  # Convert μm
+        stages=exp.positions[0].milling_workflows["mill_rough"],  # type: ignore
+    )
 
     # Create the MillingTaskConfig widget
-    config_widget = MillingTaskConfigWidget(show_advanced=False)
+    config_widget = MillingTaskConfigWidget(microscope=microscope, 
+                                            milling_task_config=None)
     layout.addWidget(config_widget)
 
-    # Add advanced settings toggle checkbox
-    advanced_checkbox = QCheckBox("Show Advanced Settings")
-    advanced_checkbox.setChecked(config_widget.get_show_advanced())
-    advanced_checkbox.toggled.connect(config_widget.set_show_advanced)
-    layout.addWidget(advanced_checkbox)
+    config_widget.update_from_settings(milling_task_config)
 
-    # Add a button to print current settings
-    def print_settings():
-        settings = config_widget.get_settings()
-        print("Current FibsemMillingTaskConfig:")
-        print(f"  name: {settings.name}")
-        print(f"  field_of_view: {settings.field_of_view}")
-        print(f"  channel: {settings.channel} (preserved)")
-        print(f"  alignment: {settings.alignment}")
-        print(f"  acquisition: {settings.acquisition}")
-        print(f"  stages: {len(settings.stages)} stages (preserved)")
-
-    print_button = QPushButton("Print Current Settings")
-    print_button.clicked.connect(print_settings)
-    layout.addWidget(print_button)
-
+    from datetime import datetime
     # Connect to settings change signal
     def on_settings_changed(settings: FibsemMillingTaskConfig):
-        print(
-            f"Settings changed - name: {settings.name}, fov: {settings.field_of_view}"
-        )
+        print(f"Settings changed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"  name: {settings.name}")
+        print(f"  field_of_view: {settings.field_of_view}")
+        print(f"  alignment: {settings.alignment}")
+        print(f"  acquisition: {settings.acquisition}")
+        print(f"  stages: {len(settings.stages)} stages")
+        for stage in settings.stages:
+            print(f"    Stage Name: {stage.name}")
+            print(f"    Milling: {stage.milling}")
+            print(f"    Pattern: {stage.pattern}")
+            print(f"    Strategy: {stage.strategy.config}")
+            print(f"---------------------")
 
     config_widget.settings_changed.connect(on_settings_changed)
-
     main_widget.setWindowTitle("MillingTaskConfig Widget Test")
-    # main_widget.show()
 
 
-    viewer.window.add_dock_widget(main_widget, area='right')
+    viewer.window.add_dock_widget(main_widget, add_vertical_stretch=False, area='right')
 
     napari.run()
-    # sys.exit(app.exec_())
