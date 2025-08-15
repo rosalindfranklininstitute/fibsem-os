@@ -1184,6 +1184,9 @@ class TescanMicroscope(FibsemMicroscope):
         finally:
             del thread_connection
 
+    def start_milling(self) -> None:
+        self.connection.DrawBeam.Start()
+
     def pause_milling(self):
         self.connection.DrawBeam.Pause()
 
