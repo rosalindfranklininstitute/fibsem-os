@@ -1,5 +1,4 @@
 import copy
-import datetime
 from typing import Optional
 
 import napari
@@ -15,15 +14,13 @@ from PyQt5.QtWidgets import (
 )
 from superqt import QCollapsible, QIconifyIcon
 
-from fibsem import utils
-from fibsem.constants import MICRO_TO_SI, SI_TO_MICRO
+from fibsem import utils, constants
 from fibsem.microscope import FibsemMicroscope
-from fibsem.milling import FibsemMillingStage
 from fibsem.milling.tasks import FibsemMillingTaskConfig
-from fibsem.ui.widgets.milling_alignment_widget import MillingAlignmentWidget
+from fibsem.ui.widgets.milling_alignment_widget import FibsemMillingAlignmentWidget
 from fibsem.ui.widgets.milling_stage_editor_widget import FibsemMillingStageEditorWidget
 from fibsem.ui.widgets.milling_task_acquisition_settings_widget import (
-    MillingTaskAcquisitionSettingsWidget,
+    FibsemMillingTaskAcquisitionSettingsWidget,
 )
 from fibsem.ui.widgets.milling_widget import FibsemMillingWidget2
 
@@ -41,6 +38,7 @@ WIDGET_CONFIG = {
     },
 }
 
+# TODO: add options checkboxes, show advanced, show milling patterns, etc
 
 class MillingTaskConfigWidget(QWidget):
     """Widget for editing FibsemMillingTaskConfig settings.
@@ -127,29 +125,26 @@ class MillingTaskConfigWidget(QWidget):
         self.task_group = QCollapsible("Milling Task", self)
         self.task_group.addWidget(self.basic_content)
         self.basic_content.setContentsMargins(0, 0, 0, 0)
-        self.task_group.expand(animate=False)
         self.task_group.setContentsMargins(0, 0, 0, 0)
 
         ############
 
         # Alignment settings group
-        self.alignment_widget = MillingAlignmentWidget(
+        self.alignment_widget = FibsemMillingAlignmentWidget(
             show_advanced=self._show_advanced
         )
         self.alignment_widget.setContentsMargins(0, 0, 0, 0)
         self.alignment_group = QCollapsible("Alignment", self)
         self.alignment_group.addWidget(self.alignment_widget)
-        self.alignment_group.expand(animate=False)
         self.alignment_group.setContentsMargins(0, 0, 0, 0)
 
         # Acquisition settings group
-        self.acquisition_widget = MillingTaskAcquisitionSettingsWidget(
+        self.acquisition_widget = FibsemMillingTaskAcquisitionSettingsWidget(
             show_advanced=self._show_advanced
         )
         self.acquisition_widget.setContentsMargins(0, 0, 0, 0)
         self.acquisition_group = QCollapsible("Acquisition", self)
         self.acquisition_group.addWidget(self.acquisition_widget)
-        self.acquisition_group.expand(animate=False)
         self.acquisition_group.setContentsMargins(0, 0, 0, 0)
 
         # Milling stages editor
@@ -162,13 +157,12 @@ class MillingTaskConfigWidget(QWidget):
         self.milling_editor_widget.setContentsMargins(0, 0, 0, 0)
         self.miling_group = QCollapsible("Milling Stages", self)
         self.miling_group.addWidget(self.milling_editor_widget)
-        self.miling_group.expand(animate=False)
         self.miling_group.setContentsMargins(0, 0, 0, 0)
 
-        layout.addWidget(self.task_group)
-        layout.addWidget(self.alignment_group)
-        layout.addWidget(self.acquisition_group)
-        layout.addWidget(self.miling_group)
+        layout.addWidget(self.task_group)           # type: ignore
+        layout.addWidget(self.alignment_group)      # type: ignore
+        layout.addWidget(self.acquisition_group)    # type: ignore
+        layout.addWidget(self.miling_group)         # type: ignore
 
         # NOTES: shouldn't know anything about viewer, or microscope
         # only need microscope to get 'dynamic' values such as milling current
@@ -213,7 +207,7 @@ class MillingTaskConfigWidget(QWidget):
             FibsemMillingTaskConfig object with values from the UI controls.
         """
         self._settings.name = self.name_edit.text()
-        self._settings.field_of_view = self.field_of_view_spinbox.value() * MICRO_TO_SI
+        self._settings.field_of_view = self.field_of_view_spinbox.value() * constants.MICRO_TO_SI
         self._settings.alignment = self.alignment_widget.get_settings()
         self._settings.acquisition = self.acquisition_widget.get_settings()
         self._settings.stages = self.milling_editor_widget.get_milling_stages()
@@ -231,7 +225,7 @@ class MillingTaskConfigWidget(QWidget):
         self.blockSignals(True)
 
         self.name_edit.setText(settings.name)
-        self.field_of_view_spinbox.setValue(settings.field_of_view * SI_TO_MICRO)
+        self.field_of_view_spinbox.setValue(settings.field_of_view * constants.SI_TO_MICRO)
         # Update sub-widgets
         self.alignment_widget.update_from_settings(settings.alignment)
         self.acquisition_widget.update_from_settings(settings.acquisition)
@@ -267,6 +261,15 @@ class MillingTaskConfigWidget(QWidget):
         """
         return self._show_advanced
 
+    def set_background_milling_stages(self, background_stages):
+        """Set background milling stages to be displayed in the milling stage editor.
+        
+        Args:
+            background_stages: List of FibsemMillingStage objects to show as background
+        """
+        print(f"Setting background milling stages: {[bs.name for bs in background_stages]}")
+        self.milling_editor_widget.set_background_milling_stages(background_stages)
+
 
 
 if __name__ == "__main__":
@@ -283,11 +286,9 @@ if __name__ == "__main__":
     main_widget = QTabWidget()
 
     # set tab to side
-    # main_widget.setTabPosition(QTabWidget.West)
     qwidget = QWidget()
     icon1 = QIconifyIcon("material-symbols:experiment", color="white")
-    main_widget.addTab(qwidget, icon1, "Experiment")
-    # main_widget.addTab(, "Milling Task Config Test")
+    main_widget.addTab(qwidget, icon1, "Experiment") # type: ignore
     layout = QVBoxLayout()
     qwidget.setLayout(layout)
     qwidget.setContentsMargins(0, 0, 0, 0)
@@ -302,37 +303,31 @@ if __name__ == "__main__":
     protocol = AutoLamellaProtocol.load(PROTOCOL_PATH)
 
     milling_task_config = FibsemMillingTaskConfig.from_stages(
-        # name="Test Milling Task",
-        # field_of_view=150.0 * MICRO_TO_SI,  # Convert μm
         stages=exp.positions[0].milling_workflows["mill_rough"],  # type: ignore
     )
 
     # Create the MillingTaskConfig widget
-    config_widget = MillingTaskConfigWidget(microscope=microscope, 
-                                            milling_task_config=None)
+    config_widget = MillingTaskConfigWidget(microscope=microscope)
     layout.addWidget(config_widget)
-
     config_widget.update_from_settings(milling_task_config)
 
-    from datetime import datetime
     # Connect to settings change signal
-    def on_settings_changed(settings: FibsemMillingTaskConfig):
-        print(f"Settings changed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"  name: {settings.name}")
-        print(f"  field_of_view: {settings.field_of_view}")
-        print(f"  alignment: {settings.alignment}")
-        print(f"  acquisition: {settings.acquisition}")
-        print(f"  stages: {len(settings.stages)} stages")
-        for stage in settings.stages:
+    def on_task_config_changed(task_config: FibsemMillingTaskConfig):
+        print(f"Task Config changed: {utils.current_timestamp_v3(timeonly=False)}")
+        print(f"  name: {task_config.name}")
+        print(f"  field_of_view: {task_config.field_of_view}")
+        print(f"  alignment: {task_config.alignment}")
+        print(f"  acquisition: {task_config.acquisition}")
+        print(f"  stages: {len(task_config.stages)} stages")
+        for stage in task_config.stages:
             print(f"    Stage Name: {stage.name}")
             print(f"    Milling: {stage.milling}")
             print(f"    Pattern: {stage.pattern}")
             print(f"    Strategy: {stage.strategy.config}")
-            print(f"---------------------")
+            print("---------------------"*3)
 
-    config_widget.settings_changed.connect(on_settings_changed)
+    config_widget.settings_changed.connect(on_task_config_changed)
     main_widget.setWindowTitle("MillingTaskConfig Widget Test")
-
 
     viewer.window.add_dock_widget(main_widget, add_vertical_stretch=False, area='right')
 

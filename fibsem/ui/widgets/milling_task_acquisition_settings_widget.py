@@ -5,7 +5,7 @@ from fibsem.milling.tasks import MillingTaskAcquisitionSettings
 from fibsem.ui.widgets.image_settings_widget import ImageSettingsWidget
 
 
-class MillingTaskAcquisitionSettingsWidget(QWidget):
+class FibsemMillingTaskAcquisitionSettingsWidget(QWidget):
     """Widget for editing MillingTaskAcquisitionSettings.
 
     Contains an enabled checkbox and an ImageSettingsWidget for
@@ -128,7 +128,7 @@ if __name__ == "__main__":
     main_widget.setLayout(layout)
 
     # Create the MillingTaskAcquisitionSettings widget
-    settings_widget = MillingTaskAcquisitionSettingsWidget(show_advanced=False)
+    settings_widget = FibsemMillingTaskAcquisitionSettingsWidget(show_advanced=False)
     layout.addWidget(settings_widget)
 
     # Add advanced settings toggle checkbox

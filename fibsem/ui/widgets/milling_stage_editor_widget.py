@@ -1015,6 +1015,7 @@ class FibsemMillingStageEditorWidget(QWidget):
             return
 
         logging.info(f"Selected milling stages: {[stage.name for stage in milling_stages]}")
+        logging.info(f"Background milling stages: {[stage.name for stage in self._background_milling_stages]}")
 
         if self.image is None:
             image = FibsemImage.generate_blank_image(hfw=milling_stages[0].milling.hfw)

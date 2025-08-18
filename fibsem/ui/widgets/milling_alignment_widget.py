@@ -16,7 +16,7 @@ WIDGET_CONFIG = {
 }
 
 
-class MillingAlignmentWidget(QWidget):
+class FibsemMillingAlignmentWidget(QWidget):
     """Widget for editing MillingAlignment settings.
 
     Contains enabled checkbox, interval settings, and a label
