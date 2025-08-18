@@ -175,10 +175,8 @@ class AutoLamellaTaskConfig(ABC):
     """Configuration for AutoLamella tasks."""
     task_name: ClassVar[str]
     display_name: ClassVar[str]
-    supervise: bool = True
     imaging: ImageSettings = field(default_factory=ImageSettings)
     milling: Dict[str, FibsemMillingTaskConfig] = field(default_factory=dict)
-    # requires: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         """Convert configuration to a dictionary."""

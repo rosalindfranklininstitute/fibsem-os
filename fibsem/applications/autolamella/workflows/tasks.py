@@ -438,16 +438,17 @@ class MillRoughTask(AutoLamellaTask):
         alignment.multi_step_alignment_v2(microscope=self.microscope, 
                                         ref_image=ref_image, 
                                         beam_type=BeamType.ION, 
-                                        alignment_current=None,
                                         steps=MAX_ALIGNMENT_ATTEMPTS)
 
         # take reference images
         self.update_status_ui("Acquiring Reference Images...")
         image_settings.filename = f"ref_{self.task_name}_start"
-        eb_image, ib_image = acquire.take_reference_images(self.microscope, image_settings)
-        set_images_ui(self.parent_ui, eb_image, ib_image)
+        sem_image, fib_image = acquire.take_reference_images(self.microscope, image_settings)
+        set_images_ui(self.parent_ui, sem_image, fib_image)
 
-        # mill stress relief features
+        # mill stress relief features # QUERY: should stress relief be a separate task, or just part of mill rough
+        # PRO: allows it to be 'separate'
+        # CON: doesn't allow for easy management of related tasks, re-ordering
         self.log_status_message("MILL_STRESS_RELIEF")
         milling_task_config = self.config.milling[STRESS_RELIEF_KEY]
         milling_task_config.alignment.rect = self.lamella.alignment_area # TODO: this should be set in protocol
@@ -520,8 +521,8 @@ class MillPolishingTask(AutoLamellaTask):
         # take reference images
         self.update_status_ui("Acquiring Reference Images...")
         image_settings.filename = f"ref_{self.task_name}_start"
-        eb_image, ib_image = acquire.take_reference_images(self.microscope, image_settings)
-        set_images_ui(self.parent_ui, eb_image, ib_image)
+        sem_image, fib_image = acquire.take_reference_images(self.microscope, image_settings)
+        set_images_ui(self.parent_ui, sem_image, fib_image)
 
         # mill rough trench
         self.log_status_message("MILL_LAMELLA")
@@ -659,8 +660,10 @@ class SetupLamellaTask(AutoLamellaTask):
         image_settings.hfw = rough_milling_task_config.field_of_view
         image_settings.filename = f"ref_{self.task_name}_start"
         image_settings.save = True
-        eb_image, ib_image = acquire.take_reference_images(self.microscope, image_settings)
-        set_images_ui(self.parent_ui, eb_image, ib_image)
+        sem_image, fib_image = acquire.take_reference_images(self.microscope, image_settings)
+        set_images_ui(self.parent_ui, sem_image, fib_image)
+
+        # TODO: display milling task config to display lamella milling tasks
 
         # fiducial
         if self.config.use_fiducial:
@@ -671,8 +674,7 @@ class SetupLamellaTask(AutoLamellaTask):
             milling_task = run_milling_task(self.microscope, fiducial_task_config, parent_widget)
             self.config.milling[MILL_POLISHING_KEY] = deepcopy(milling_task.config)
 
-            alignment_hfw = milling_task.config.stages[0].milling.hfw
-
+            alignment_hfw = milling_task.config.field_of_view
             # get alignment area based on fiducial bounding box
             self.lamella.alignment_area = get_pattern_reduced_area(stage=milling_task.config.stages[0],
                                                             image=FibsemImage.generate_blank_image(hfw=alignment_hfw),
