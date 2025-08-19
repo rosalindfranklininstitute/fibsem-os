@@ -119,11 +119,20 @@ class FibsemMillingTaskWidget(QWidget):
 
     def _on_config_changed(self, config: FibsemMillingTaskConfig):
         """Handle configuration changes in the sub-widget."""
+        print(f"_on_config_changed called: current_task='{self._current_task_name}', config={config is not None}")
         if self._current_task_name:
             # Update the stored configuration
             self._task_configs[self._current_task_name] = config
             self.task_config_updated.emit(self._current_task_name, config)
-            print(f"Task '{self._current_task_name}' configuration updated.")
+            print(f"Task '{self._current_task_name}' configuration updated and signal emitted.")
+        else:
+            # When no current task is selected, emit update for all task configs
+            # This handles the case where the lamella editor passes all configs
+            print("No current task selected, emitting updates for all tasks")
+            for task_name in self._task_configs.keys():
+                self.task_config_updated.emit(task_name, config)
+                print(f"Emitted update for task '{task_name}'")
+                break  # Only emit once since all tasks share the same config in this case
 
     def set_task_configs(self, task_configs: Dict[str, FibsemMillingTaskConfig]):
         """Set the available task configurations.
