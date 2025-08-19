@@ -21,7 +21,8 @@ from PyQt5.QtWidgets import (
 
 from fibsem.applications.autolamella.structures import AutoLamellaTaskConfig
 from fibsem.applications.autolamella.workflows.tasks import TASK_REGISTRY
-
+from fibsem.ui.widgets.milling_task_widget import FibsemMillingTaskWidget
+from fibsem import utils
 
 class ParameterWidget:
     """Base class for parameter editing widgets."""
@@ -235,19 +236,37 @@ class AutoLamellaTaskConfigWidget(QWidget):
         super().__init__(parent)
         self.task_config = task_config
         self.parameter_widgets: Dict[str, ParameterWidget] = {}
-        
+        self.milling_task_widget: FibsemMillingTaskWidget
+
         self._setup_ui()
         if self.task_config:
             self._update_from_config()
+            
     
     def _setup_ui(self):
         """Create and configure all UI elements."""
-        layout = QVBoxLayout()
-        self.setLayout(layout)
-        
+        self.main_layout = QVBoxLayout()
+        self.setLayout(self.main_layout)
+
         self.form_layout = QFormLayout()
-        layout.addLayout(self.form_layout)
+        self.main_layout.addLayout(self.form_layout)
+
+        # initialise milling_task_widget 
+        microscope, settings = utils.setup_session()
+        self.milling_task_widget = FibsemMillingTaskWidget(
+            microscope=microscope, task_configs={}, 
+            milling_enabled=False, 
+            parent=self
+        )
+        self.milling_task_widget.hide()
+        self.main_layout.addWidget(self.milling_task_widget)
         
+        # Connect milling widget signals
+        self.milling_task_widget.task_config_updated.connect(self._on_milling_config_updated)
+
+        # TODO: wrap in collapsible
+        # self.main_layout.addStretch()
+
     def set_task_config(self, task_config: Optional[AutoLamellaTaskConfig]):
         """Set the task configuration to edit."""
         self.task_config = task_config
@@ -285,7 +304,13 @@ class AutoLamellaTaskConfigWidget(QWidget):
                     
                 self.form_layout.addRow(label, widget)
     
-    def _create_parameter_widget(self, name: str, value: Any, annotation: type, metadata: dict = None) -> Optional[ParameterWidget]:
+        if self.task_config.milling:
+            self.milling_task_widget.set_task_configs(self.task_config.milling)
+            self.milling_task_widget.show()
+        else:
+            self.milling_task_widget.hide()
+
+    def _create_parameter_widget(self, name: str, value: Any, annotation: type, metadata: Optional[dict] = None) -> Optional[ParameterWidget]:
         """Create the appropriate parameter widget for the given type."""
         metadata = metadata or {}
         
@@ -334,6 +359,17 @@ class AutoLamellaTaskConfigWidget(QWidget):
             
             # Update the task config
             setattr(self.task_config, field_name, new_value)
+            
+            # Emit change signal
+            self.config_changed.emit(self.task_config)
+    
+    def _on_milling_config_updated(self, task_name: str, milling_config):
+        """Handle milling task config updates."""
+        if self.task_config and hasattr(self.task_config, 'milling'):
+            # Update the milling config in the task config
+            if not self.task_config.milling:
+                self.task_config.milling = {}
+            self.task_config.milling[task_name] = milling_config
             
             # Emit change signal
             self.config_changed.emit(self.task_config)
