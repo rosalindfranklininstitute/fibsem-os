@@ -1,0 +1,406 @@
+from typing import Any, Dict, List, Optional, Union
+import inspect
+from dataclasses import fields
+from enum import Enum
+
+from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QScrollArea,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
+
+from fibsem.applications.autolamella.structures import AutoLamellaTaskConfig
+from fibsem.applications.autolamella.workflows.tasks import TASK_REGISTRY
+
+
+class ParameterWidget:
+    """Base class for parameter editing widgets."""
+    
+    def __init__(self, name: str, value: Any, annotation: type):
+        self.name = name
+        self.value = value
+        self.annotation = annotation
+        self.widget = None
+        
+    def create_widget(self) -> QWidget:
+        """Create the appropriate widget for this parameter type."""
+        raise NotImplementedError
+        
+    def get_value(self) -> Any:
+        """Get the current value from the widget."""
+        raise NotImplementedError
+        
+    def set_value(self, value: Any) -> None:
+        """Set the value in the widget."""
+        raise NotImplementedError
+
+
+class BoolParameterWidget(ParameterWidget):
+    """Widget for boolean parameters."""
+    
+    def create_widget(self) -> QWidget:
+        self.widget = QCheckBox()
+        self.widget.setChecked(bool(self.value))
+        return self.widget
+        
+    def get_value(self) -> bool:
+        return self.widget.isChecked()
+        
+    def set_value(self, value: bool) -> None:
+        self.widget.setChecked(bool(value))
+
+
+class IntParameterWidget(ParameterWidget):
+    """Widget for integer parameters."""
+    
+    def create_widget(self) -> QWidget:
+        self.widget = QSpinBox()
+        self.widget.setRange(-2147483648, 2147483647)  # 32-bit int range
+        self.widget.setValue(int(self.value))
+        return self.widget
+        
+    def get_value(self) -> int:
+        return self.widget.value()
+        
+    def set_value(self, value: int) -> None:
+        self.widget.setValue(int(value))
+
+
+def get_si_prefix_suffix(scale: float, units: str) -> str:
+    """Get the appropriate SI prefix suffix based on scale factor."""
+    si_prefixes = {
+        1e12: 'p',    # pico
+        1e9: 'n',     # nano
+        1e6: 'μ',     # micro
+        1e3: 'm',     # milli
+        1.0: '',      # no prefix
+        1e-3: 'k',    # kilo
+        1e-6: 'M',    # mega
+        1e-9: 'G',    # giga
+        1e-12: 'T',   # tera
+    }
+    
+    prefix = si_prefixes.get(scale, '')
+    return f" {prefix}{units}" if units else ""
+
+
+class FloatParameterWidget(ParameterWidget):
+    """Widget for float parameters with units and scaling support."""
+    
+    def __init__(self, name: str, value: Any, annotation: type, metadata: Optional[dict] = None):
+        super().__init__(name, value, annotation)
+        self.metadata = metadata or {}
+        self.scale = self.metadata.get('scale', 1.0)
+        self.units = self.metadata.get('units', '')
+        
+    def create_widget(self) -> QWidget:
+        self.widget = QDoubleSpinBox()
+        self.widget.setRange(-1e10, 1e10)
+        self.widget.setDecimals(2)
+        
+        # Apply scaling for display (multiply by scale to show user-friendly values)
+        display_value = float(self.value) * self.scale
+        self.widget.setValue(display_value)
+        
+        # Add units suffix if available
+        suffix = get_si_prefix_suffix(self.scale, self.units)
+        if suffix:
+            self.widget.setSuffix(suffix)
+        
+        return self.widget
+        
+    def get_value(self) -> float:
+        # Convert from display value back to stored value (divide by scale)
+        display_value = self.widget.value()
+        return display_value / self.scale
+        
+    def set_value(self, value: float) -> None:
+        # Convert to display value (multiply by scale)
+        display_value = float(value) * self.scale
+        self.widget.setValue(display_value)
+
+
+class StringParameterWidget(ParameterWidget):
+    """Widget for string parameters."""
+    
+    def create_widget(self) -> QWidget:
+        self.widget = QLineEdit()
+        self.widget.setText(str(self.value))
+        return self.widget
+        
+    def get_value(self) -> str:
+        return self.widget.text()
+        
+    def set_value(self, value: str) -> None:
+        self.widget.setText(str(value))
+
+
+class EnumParameterWidget(ParameterWidget):
+    """Widget for enum parameters."""
+    
+    def create_widget(self) -> QWidget:
+        self.widget = QComboBox()
+        
+        # Add enum values to combo box
+        for enum_value in self.annotation:
+            self.widget.addItem(str(enum_value.value), enum_value)
+            
+        # Set current value
+        current_index = 0
+        for i, enum_value in enumerate(self.annotation):
+            if enum_value == self.value or enum_value.value == self.value:
+                current_index = i
+                break
+        self.widget.setCurrentIndex(current_index)
+        
+        return self.widget
+        
+    def get_value(self) -> Any:
+        return self.widget.currentData()
+        
+    def set_value(self, value: Any) -> None:
+        for i in range(self.widget.count()):
+            if self.widget.itemData(i) == value:
+                self.widget.setCurrentIndex(i)
+                break
+
+
+class ListParameterWidget(ParameterWidget):
+    """Widget for list parameters (simplified as comma-separated values)."""
+    
+    def create_widget(self) -> QWidget:
+        self.widget = QLineEdit()
+        
+        # Convert list to comma-separated string
+        if isinstance(self.value, list):
+            text = ", ".join(str(item) for item in self.value)
+        else:
+            text = str(self.value)
+        self.widget.setText(text)
+        self.widget.setPlaceholderText("Enter comma-separated values")
+        
+        return self.widget
+        
+    def get_value(self) -> List[Any]:
+        text = self.widget.text().strip()
+        if not text:
+            return []
+            
+        # Split by comma and convert based on list type annotation
+        items = [item.strip() for item in text.split(",")]
+        
+        # Try to determine the list item type
+        origin = getattr(self.annotation, '__origin__', None)
+        if origin is list:
+            args = getattr(self.annotation, '__args__', ())
+            if args:
+                item_type = args[0]
+                try:
+                    if item_type == int:
+                        return [int(item) for item in items]
+                    elif item_type == float:
+                        return [float(item) for item in items]
+                    elif item_type == bool:
+                        return [item.lower() in ('true', '1', 'yes') for item in items]
+                except ValueError:
+                    pass
+        
+        return items  # Return as strings if conversion fails
+        
+    def set_value(self, value: List[Any]) -> None:
+        if isinstance(value, list):
+            text = ", ".join(str(item) for item in value)
+        else:
+            text = str(value)
+        self.widget.setText(text)
+
+
+class AutoLamellaTaskConfigWidget(QWidget):
+    """Widget for configuring AutoLamella task parameters."""
+    
+    config_changed = pyqtSignal(AutoLamellaTaskConfig)
+    
+    def __init__(self, task_config: Optional[AutoLamellaTaskConfig] = None, 
+                 parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.task_config = task_config
+        self.parameter_widgets: Dict[str, ParameterWidget] = {}
+        
+        self._setup_ui()
+        if self.task_config:
+            self._update_from_config()
+    
+    def _setup_ui(self):
+        """Create and configure all UI elements."""
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # Title
+        if self.task_config:
+            title = f"Configure {self.task_config.display_name}"
+        else:
+            title = "Task Configuration"
+            
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-weight: bold; font-size: 14px; margin-bottom: 10px;")
+        layout.addWidget(title_label)
+        
+        # Scrollable area for parameters
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        
+        self.form_layout = QFormLayout()
+        scroll_widget.setLayout(self.form_layout)
+        scroll_area.setWidget(scroll_widget)
+        
+        layout.addWidget(scroll_area)
+        
+    def set_task_config(self, task_config: AutoLamellaTaskConfig):
+        """Set the task configuration to edit."""
+        self.task_config = task_config
+        self._update_from_config()
+        
+    def _update_from_config(self):
+        """Update the UI from the current task configuration."""
+        if not self.task_config:
+            return
+            
+        # Clear existing widgets
+        self._clear_form()
+        
+        # Get all configurable parameters using the parameters property
+        for param_name in self.task_config.parameters:
+            # Get field info and current value
+            field = next(f for f in fields(self.task_config) if f.name == param_name)
+            value = getattr(self.task_config, param_name)
+            
+            # Create parameter widget
+            param_widget = self._create_parameter_widget(param_name, value, field.type, field.metadata)
+            if param_widget:
+                self.parameter_widgets[param_name] = param_widget
+                
+                # Add to form
+                widget = param_widget.create_widget()
+                
+                # Connect change signals to update config
+                self._connect_widget_signals(widget, param_name)
+                
+                # Create label with tooltip if available
+                label = QLabel(self._format_field_name(param_name))
+                if hasattr(field, 'metadata') and 'help' in field.metadata:
+                    label.setToolTip(field.metadata['help'])
+                    
+                self.form_layout.addRow(label, widget)
+    
+    def _create_parameter_widget(self, name: str, value: Any, annotation: type, metadata: dict = None) -> Optional[ParameterWidget]:
+        """Create the appropriate parameter widget for the given type."""
+        metadata = metadata or {}
+        
+        # Handle Union types (e.g., Optional[T])
+        origin = getattr(annotation, '__origin__', None)
+        if origin is Union:
+            args = getattr(annotation, '__args__', ())
+            # Find the non-None type for Optional[T]
+            non_none_types = [arg for arg in args if arg is not type(None)]
+            if non_none_types:
+                annotation = non_none_types[0]
+        
+        # Determine widget type based on annotation
+        if annotation == bool:
+            return BoolParameterWidget(name, value, annotation)
+        elif annotation == int:
+            return IntParameterWidget(name, value, annotation)
+        elif annotation == float:
+            return FloatParameterWidget(name, value, annotation, metadata)
+        elif annotation == str:
+            return StringParameterWidget(name, value, annotation)
+        elif inspect.isclass(annotation) and issubclass(annotation, Enum):
+            return EnumParameterWidget(name, value, annotation)
+        elif origin is list or (inspect.isclass(annotation) and issubclass(annotation, list)):
+            return ListParameterWidget(name, value, annotation)
+        else:
+            # Fallback to string widget for unknown types
+            return StringParameterWidget(name, value, annotation)
+    
+    def _connect_widget_signals(self, widget: QWidget, field_name: str):
+        """Connect widget change signals to update the configuration."""
+        if isinstance(widget, QCheckBox):
+            widget.toggled.connect(lambda: self._on_parameter_changed(field_name))
+        elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+            widget.valueChanged.connect(lambda: self._on_parameter_changed(field_name))
+        elif isinstance(widget, QLineEdit):
+            widget.textChanged.connect(lambda: self._on_parameter_changed(field_name))
+        elif isinstance(widget, QComboBox):
+            widget.currentIndexChanged.connect(lambda: self._on_parameter_changed(field_name))
+    
+    def _on_parameter_changed(self, field_name: str):
+        """Handle parameter value changes."""
+        if field_name in self.parameter_widgets:
+            param_widget = self.parameter_widgets[field_name]
+            new_value = param_widget.get_value()
+            
+            # Update the task config
+            setattr(self.task_config, field_name, new_value)
+            
+            # Emit change signal
+            self.config_changed.emit(self.task_config)
+    
+    def _clear_form(self):
+        """Clear all widgets from the form layout."""
+        while self.form_layout.count():
+            child = self.form_layout.takeAt(0)
+            if child.widget():
+                child.widget().setParent(None)
+        self.parameter_widgets.clear()
+    
+    def _format_field_name(self, field_name: str) -> str:
+        """Format field name for display (convert snake_case to Title Case)."""
+        return field_name.replace('_', ' ').title()
+    
+    def get_task_config(self) -> Optional[AutoLamellaTaskConfig]:
+        """Get the current task configuration."""
+        return self.task_config
+
+
+if __name__ == "__main__":
+    import sys
+    from PyQt5.QtWidgets import QApplication
+    from fibsem.applications.autolamella.workflows.tasks import SpotBurnFiducialTaskConfig, SetupLamellaTaskConfig, MillPolishingTaskConfig, MillUndercutTaskConfig, MillTrenchTaskConfig
+    
+    app = QApplication(sys.argv)
+    
+    # Create test config
+    # test_config = SetupLamellaTaskConfig(
+    #     milling_angle=15.0,
+    #     use_fiducial=True
+    # )
+    # test_config = MillUndercutTaskConfig(
+    #     orientation="SEM", 
+    #     milling_angles=[25, 20]
+    # )
+    test_config = SpotBurnFiducialTaskConfig(
+        milling_current=50.0e-12,
+        exposure_time=5,
+        orientation="FIB"
+    )
+
+    # Create widget
+    widget = AutoLamellaTaskConfigWidget(test_config)
+    widget.config_changed.connect(lambda config: print(f"Config changed: {config}"))
+    
+    widget.setWindowTitle("AutoLamella Task Config Widget Test")
+    widget.resize(400, 600)
+    widget.show()
+    
+    sys.exit(app.exec_())
