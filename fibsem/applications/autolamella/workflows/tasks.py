@@ -84,9 +84,74 @@ TAutoLamellaTaskConfig = TypeVar(
 # TODO: create a ui for mill task, update_milling_ui doesnt work for this
 MAX_ALIGNMENT_ATTEMPTS = 3
 STRESS_RELIEF_KEY = "stress-relief"
+ATOL_STAGE_TILT = np.radians(1)  # radians, acceptable tolerance for stage tilt in radians
+
+@dataclass
+class MillTrenchTaskConfig(AutoLamellaTaskConfig):
+    """Configuration for the MillTrenchTask."""
+    align_reference: bool = False  # whether to align to a trench reference image
+    charge_neutralisation: bool = True
+    orientation: str = "FIB"
+    task_name: ClassVar[str] = "MILL_TRENCH"
+    display_name: ClassVar[str] = "Trench Milling"
 
 
+@dataclass
+class MillUndercutTaskConfig(AutoLamellaTaskConfig):
+    """Configuration for the MillUndercutTask."""
+    orientation: str = "SEM"
+    milling_angles: List[float] = field(default_factory=lambda: [25, 20])  # in degrees
+    task_name: ClassVar[str] = "MILL_UNDERCUT"
+    display_name: ClassVar[str] = "Undercut Milling"
 
+
+@dataclass
+class SetupLamellaTaskConfig(AutoLamellaTaskConfig):
+    """Configuration for the SetupLamellaTask."""
+    milling_angle: float = 15 # in degrees
+    use_fiducial: bool = True
+    task_name: ClassVar[str] = "SETUP_LAMELLA"
+    display_name: ClassVar[str] = "Setup Lamella"
+
+
+@dataclass
+class MillRoughTaskConfig(AutoLamellaTaskConfig):
+    """Configuration for the MillRoughTask."""
+    acquire_reference_images: bool = True
+    task_name: ClassVar[str] = "MILL_ROUGH"
+    display_name: ClassVar[str] = "Rough Milling"
+
+
+@dataclass
+class MillPolishingTaskConfig(AutoLamellaTaskConfig):
+    """Configuration for the MillPolishingTask."""
+    acquire_reference_images: bool = True
+    task_name: ClassVar[str] = "MILL_POLISHING"
+    display_name: ClassVar[str] = "Polishing"
+
+
+@dataclass
+class SpotBurnFiducialTaskConfig(AutoLamellaTaskConfig):
+    """Configuration for the SpotBurnFiducialTask."""
+    task_name: ClassVar[str] = "SPOT_BURN_FIDUCIAL"
+    display_name: ClassVar[str] = "Spot Burn Fiducial"
+    milling_current: float = field(
+        default=60.0e-12,  # in Amperes
+        metadata={
+            'help': 'Milling current in Amperes',
+            'units': 'A',
+            'scale': 1e12
+        }
+    )
+    exposure_time: int = field(
+        default=10,
+        metadata={
+            'help': 'Exposure time in seconds',
+            'units': 's',
+            'scale': 1
+        }
+    )
+    orientation: str = "FIB"
 
 
 class AutoLamellaTask(ABC):
@@ -158,15 +223,6 @@ class AutoLamellaTask(ABC):
     def update_status_ui(self, message: str) -> None:
         update_status_ui(self.parent_ui, f"{self.lamella.name} [{self.task_name}] {message}")
 
-@dataclass
-class MillTrenchTaskConfig(AutoLamellaTaskConfig):
-    """Configuration for the MillTrenchTask."""
-    align_reference: bool = False  # whether to align to a trench reference image
-    charge_neutralisation: bool = True
-    orientation: str = "FIB"
-    task_name: ClassVar[str] = "MILL_TRENCH"
-    display_name: ClassVar[str] = "Trench Milling"
-
 
 class MillTrenchTask(AutoLamellaTask):
     """Task to mill the trench for a lamella."""
@@ -237,14 +293,6 @@ class MillTrenchTask(AutoLamellaTask):
             filename=f"ref_{self.task_name}_final",
         )
         set_images_ui(self.parent_ui, reference_images.high_res_eb, reference_images.high_res_ib)
-
-@dataclass
-class MillUndercutTaskConfig(AutoLamellaTaskConfig):
-    """Configuration for the MillUndercutTask."""
-    orientation: str = "SEM"
-    milling_angles: List[float] = field(default_factory=lambda: [25, 20])  # in degrees
-    task_name: ClassVar[str] = "MILL_UNDERCUT"
-    display_name: ClassVar[str] = "Undercut Milling"
 
 
 class MillUndercutTask(AutoLamellaTask):
@@ -386,20 +434,6 @@ class MillUndercutTask(AutoLamellaTask):
         set_images_ui(self.parent_ui, reference_images.high_res_eb, reference_images.high_res_ib)
 
 
-@dataclass
-class MillRoughTaskConfig(AutoLamellaTaskConfig):
-    """Configuration for the MillRoughTask."""
-    task_name: ClassVar[str] = "MILL_ROUGH"
-    display_name: ClassVar[str] = "Rough Milling"
-
-
-@dataclass
-class MillPolishingTaskConfig(AutoLamellaTaskConfig):
-    """Configuration for the MillPolishingTask."""
-    task_name: ClassVar[str] = "MILL_POLISHING"
-    display_name: ClassVar[str] = "Polishing"
-
-
 class MillRoughTask(AutoLamellaTask):
     """Task to mill the rough trench for a lamella."""
     config: MillRoughTaskConfig
@@ -477,6 +511,7 @@ class MillRoughTask(AutoLamellaTask):
         )
         set_images_ui(self.parent_ui, reference_images.high_res_eb, reference_images.high_res_ib)
 
+
 class MillPolishingTask(AutoLamellaTask):
     """Task to mill the polishing trench for a lamella."""
     config: MillPolishingTaskConfig
@@ -545,15 +580,6 @@ class MillPolishingTask(AutoLamellaTask):
         set_images_ui(self.parent_ui, reference_images.high_res_eb, reference_images.high_res_ib)
 
 
-@dataclass
-class SpotBurnFiducialTaskConfig(AutoLamellaTaskConfig):
-    """Configuration for the SpotBurnFiducialTask."""
-    task_name: ClassVar[str] = "SPOT_BURN_FIDUCIAL"
-    display_name: ClassVar[str] = "Spot Burn Fiducial"
-    milling_current: float = 60.0e-12  # in Amperes
-    exposure_time: int = 10  # in seconds
-    orientation: str = "FIB"
-
 class SpotBurnFiducialTask(AutoLamellaTask):
     """Task to mill spot fiducial markers for correlation."""
     config: SpotBurnFiducialTaskConfig
@@ -597,15 +623,6 @@ class SpotBurnFiducialTask(AutoLamellaTask):
 # setup lamella: mill fiducial, acquire alignment image, set alignment area
 # then allow the user to modify the other patterns (rough mill, polishing) asynchronously in gui
 
-@dataclass
-class SetupLamellaTaskConfig(AutoLamellaTaskConfig):
-    """Configuration for the SetupLamellaTask."""
-    milling_angle: float = 15 # in degrees
-    use_fiducial: bool = True
-    task_name: ClassVar[str] = "SETUP_LAMELLA"
-    display_name: ClassVar[str] = "Setup Lamella"
-
-ATOL_STAGE_TILT = np.radians(1)  # radians, acceptable tolerance for stage tilt in radians
 
 class SetupLamellaTask(AutoLamellaTask):
     """Task to setup the lamella for milling."""

@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional, Tuple
 
 import pandas as pd
 import petname
@@ -177,6 +177,14 @@ class AutoLamellaTaskConfig(ABC):
     display_name: ClassVar[str]
     imaging: ImageSettings = field(default_factory=ImageSettings)
     milling: Dict[str, FibsemMillingTaskConfig] = field(default_factory=dict)
+
+    @property
+    def parameters(self) -> Tuple[str, ...]:
+        return tuple(
+            f.name
+            for f in fields(self)
+            if f not in fields(AutoLamellaTaskConfig)
+        )
 
     def to_dict(self) -> dict:
         """Convert configuration to a dictionary."""
@@ -1133,8 +1141,8 @@ class AutoLamellaMethod(Enum):
     def is_liftout(self) -> bool:
         return self in [AutoLamellaMethod.LIFTOUT, 
                         AutoLamellaMethod.SERIAL_LIFTOUT]
-    
-    def get_next(self, current_stage: AutoLamellaStage) -> AutoLamellaStage:
+
+    def get_next(self, current_stage: AutoLamellaStage) -> Optional[AutoLamellaStage]:
         if current_stage is AutoLamellaStage.Finished:
             return AutoLamellaStage.Finished
         if current_stage in [AutoLamellaStage.Created, AutoLamellaStage.PositionReady]:
@@ -1148,7 +1156,7 @@ class AutoLamellaMethod(Enum):
         else:
             return None
 
-    def get_previous(self, current_stage: AutoLamellaStage) -> AutoLamellaStage:
+    def get_previous(self, current_stage: AutoLamellaStage) -> Optional[AutoLamellaStage]:
         if current_stage is AutoLamellaStage.Finished:
             return self.workflow[-1]
 
