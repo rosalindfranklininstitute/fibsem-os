@@ -251,7 +251,6 @@ workflow:
 grid-tasks:
   - name: Overview Acquisition
     description: acquire overview image of the grid
-    supervise: false
     parameters: # dict
       orientation: SEM
       image:
@@ -262,22 +261,24 @@ grid-tasks:
         hfw: 500.e-6
   - name: Cryo GIS Deposition
     description: whole grid cryogenic deposition
-    supervise: true
     parameters: # dict
       position: cryo-deposition
       time: 30 # s
   - name: Cryo Sputter Coating
     description: whole grid cryogenic sputter coating
-    supervise: true
     parameters: # dict
       position: cryo-sputter
       time: 30 # s
   - name: Parallel Trench Milling
     description: a description of the task
-    supervise: true
     parameters: # dict
       # QUERY: should this be a different kind of task? or just a parameter?
       # maybe this should just be an execution -> E.g. Execute in Parallel
+  - name: Cryo Grid Cleaning
+    description: clean the contamination from the grid with fib
+    parameters: # dict
+      milling_current: 0.74e-9 # A
+      time: 30 # s
 
 # microscope configuration? global?
 configuration:

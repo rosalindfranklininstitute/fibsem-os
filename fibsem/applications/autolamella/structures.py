@@ -303,13 +303,19 @@ class AutoLamellaWorkflowConfig:
 @evented
 @dataclass
 class AutoLamellaTaskProtocol:
+    name: str = "AutoLamella Task Protocol"
+    description: str = "Protocol for AutoLamella"
+    version: str = "1.0"
     task_config: Dict[str, AutoLamellaTaskConfig] = field(default_factory=dict)
     workflow_config: AutoLamellaWorkflowConfig = field(default_factory=AutoLamellaWorkflowConfig)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "name": self.name,
+            "description": self.description,
+            "version": self.version,
             "tasks": {k: v.to_dict() for k, v in self.task_config.items()},
-            "workflow": self.workflow_config.to_dict()
+            "workflow": self.workflow_config.to_dict(),
         }
 
     @classmethod
@@ -317,7 +323,13 @@ class AutoLamellaTaskProtocol:
         from fibsem.applications.autolamella.workflows.tasks import load_task_config
         task_config = load_task_config(data.get("tasks", {}))
         workflow_config = AutoLamellaWorkflowConfig.from_dict(data.get("workflow", {}))
-        return cls(task_config=task_config, workflow_config=workflow_config)
+        
+        return cls(
+            name=data.get("name", "AutoLamella Task Protocol"),
+            description=data.get("description", "Protocol for AutoLamella"),
+            version=data.get("version", "1.0"),
+            task_config=task_config, 
+            workflow_config=workflow_config)
 
     @classmethod
     def load(cls, filename: str) -> 'AutoLamellaTaskProtocol':

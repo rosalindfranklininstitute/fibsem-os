@@ -245,28 +245,10 @@ class AutoLamellaTaskConfigWidget(QWidget):
         layout = QVBoxLayout()
         self.setLayout(layout)
         
-        # Title
-        if self.task_config:
-            title = f"Configure {self.task_config.display_name}"
-        else:
-            title = "Task Configuration"
-            
-        title_label = QLabel(title)
-        title_label.setStyleSheet("font-weight: bold; font-size: 14px; margin-bottom: 10px;")
-        layout.addWidget(title_label)
-        
-        # Scrollable area for parameters
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_widget = QWidget()
-        
         self.form_layout = QFormLayout()
-        scroll_widget.setLayout(self.form_layout)
-        scroll_area.setWidget(scroll_widget)
+        layout.addLayout(self.form_layout)
         
-        layout.addWidget(scroll_area)
-        
-    def set_task_config(self, task_config: AutoLamellaTaskConfig):
+    def set_task_config(self, task_config: Optional[AutoLamellaTaskConfig]):
         """Set the task configuration to edit."""
         self.task_config = task_config
         self._update_from_config()
@@ -381,19 +363,19 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     
     # Create test config
-    # test_config = SetupLamellaTaskConfig(
-    #     milling_angle=15.0,
-    #     use_fiducial=True
-    # )
+    test_config = SetupLamellaTaskConfig(
+        milling_angle=15.0,
+        use_fiducial=True
+    )
     # test_config = MillUndercutTaskConfig(
     #     orientation="SEM", 
     #     milling_angles=[25, 20]
     # )
-    test_config = SpotBurnFiducialTaskConfig(
-        milling_current=50.0e-12,
-        exposure_time=5,
-        orientation="FIB"
-    )
+    # test_config = SpotBurnFiducialTaskConfig(
+    #     milling_current=50.0e-12,
+    #     exposure_time=5,
+    #     orientation="FIB"
+    # )
 
     # Create widget
     widget = AutoLamellaTaskConfigWidget(test_config)

@@ -61,14 +61,14 @@ class FibsemMillingTaskWidget(QWidget):
         self.setLayout(layout)
 
         # Create splitter for resizable panes
-        splitter = QSplitter()
-        layout.addWidget(splitter)
+        self.splitter = QSplitter()
+        layout.addWidget(self.splitter)
 
         # Left pane: Task list
         self.task_list = QListWidget()
         self.task_list.setMaximumWidth(200)
         self.task_list.setMinimumWidth(100)
-        splitter.addWidget(self.task_list)
+        self.splitter.addWidget(self.task_list)
 
         # Right pane: Task configuration widget
         self.config_widget = MillingTaskConfigWidget(
@@ -76,10 +76,10 @@ class FibsemMillingTaskWidget(QWidget):
             milling_enabled=self._milling_enabled,
             parent=self,
         )
-        splitter.addWidget(self.config_widget)
+        self.splitter.addWidget(self.config_widget)
 
         # Set splitter proportions (1:3 ratio)
-        splitter.setSizes([200, 600])
+        self.splitter.setSizes([200, 600])
 
     def _connect_signals(self):
         """Connect widget signals to their handlers."""
@@ -96,6 +96,10 @@ class FibsemMillingTaskWidget(QWidget):
         # Select the first task if available
         if self.task_list.count() > 0:
             self.task_list.setCurrentRow(0)
+
+        # if only one task, hide the task_list
+        if self.task_list.count() <= 1:
+            self.task_list.hide()
 
     def _on_task_selection_changed(
         self, current: QListWidgetItem, _previous: QListWidgetItem

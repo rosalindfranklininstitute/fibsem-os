@@ -6,11 +6,8 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFrame,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
-    QListWidget,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -52,6 +49,7 @@ class TaskDescriptionWidget(QFrame):
         self.setFrameStyle(QFrame.StyledPanel)
         self.setLineWidth(1)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # self.setContentsMargins(0, 0, 0, 0)
 
     def _setup_ui(self):
         """Create and configure all UI elements."""
@@ -60,7 +58,6 @@ class TaskDescriptionWidget(QFrame):
 
         # Task name (display only)
         self.name_label = QLabel()
-        self.name_label.setMinimumWidth(150)
         # remove outline
         self.name_label.setStyleSheet("QLabel { border: none; }")
         layout.addWidget(self.name_label)
@@ -135,7 +132,7 @@ class TaskDescriptionWidget(QFrame):
         """Enable/disable move buttons based on position in list."""
         self.move_up_button.setEnabled(can_move_up)
         self.move_down_button.setEnabled(can_move_down)
-        
+
     def set_selected(self, selected: bool):
         """Set the selected state and update visual appearance."""
         self.selected = selected
@@ -161,7 +158,7 @@ class TaskDescriptionWidget(QFrame):
                     border: 1px solid #505050;
                 }
             """)
-            
+
     def mousePressEvent(self, event):
         """Handle mouse press for selection."""
         if event.button() == Qt.MouseButton.LeftButton:
@@ -173,7 +170,9 @@ class AutoLamellaWorkflowConfigWidget(QWidget):
     """Widget for configuring AutoLamella workflow tasks with drag-drop reordering."""
 
     workflow_changed = pyqtSignal(AutoLamellaWorkflowConfig)
-    task_selected = pyqtSignal(AutoLamellaTaskDescription)  # Emitted when a task is selected
+    task_selected = pyqtSignal(
+        AutoLamellaTaskDescription
+    )  # Emitted when a task is selected
 
     def __init__(
         self,
@@ -194,38 +193,8 @@ class AutoLamellaWorkflowConfigWidget(QWidget):
         layout = QVBoxLayout()
         self.setLayout(layout)
 
-        # Workflow metadata group
-        metadata_group = QGroupBox("Workflow Information")
-        metadata_layout = QVBoxLayout()
-        metadata_group.setLayout(metadata_layout)
-        layout.addWidget(metadata_group)
-
-        # Name field
-        name_layout = QHBoxLayout()
-        name_layout.addWidget(QLabel("Name:"))
-        self.name_edit = QLineEdit()
-        self.name_edit.setPlaceholderText("Enter workflow name")
-        name_layout.addWidget(self.name_edit)
-        metadata_layout.addLayout(name_layout)
-
-        # Description field
-        desc_layout = QHBoxLayout()
-        desc_layout.addWidget(QLabel("Description:"))
-        self.description_edit = QLineEdit()
-        self.description_edit.setPlaceholderText("Enter workflow description")
-        desc_layout.addWidget(self.description_edit)
-        metadata_layout.addLayout(desc_layout)
-
-        # Tasks group
-        tasks_group = QGroupBox("Tasks")
-        tasks_layout = QVBoxLayout()
-        tasks_group.setLayout(tasks_layout)
-        layout.addWidget(tasks_group)
-
         # Add task controls
         add_task_layout = QHBoxLayout()
-        add_task_layout.addWidget(QLabel("Add Task:"))
-
         self.task_combo = QComboBox()
         self._populate_task_combo()
         add_task_layout.addWidget(self.task_combo)
@@ -234,26 +203,25 @@ class AutoLamellaWorkflowConfigWidget(QWidget):
         self.add_task_button.setStyleSheet(GREEN_PUSHBUTTON_STYLE)
         add_task_layout.addWidget(self.add_task_button)
 
-        add_task_layout.addStretch()
-        tasks_layout.addLayout(add_task_layout)
+        layout.addLayout(add_task_layout)
 
         # Task list container
         self.task_list_widget = QWidget()
         self.task_list_layout = QVBoxLayout()
+        self.task_list_layout.setContentsMargins(0, 0, 0, 0)
+        self.task_list_widget.setContentsMargins(0, 0, 0, 0)
         self.task_list_widget.setLayout(self.task_list_layout)
-        tasks_layout.addWidget(self.task_list_widget)
+        layout.addWidget(self.task_list_widget)
 
         # Help text
         help_label = QLabel(
             "Use ↑/↓ buttons to reorder tasks. Use checkboxes to configure task properties."
         )
         help_label.setStyleSheet("color: gray; font-style: italic;")
-        tasks_layout.addWidget(help_label)
+        layout.addWidget(help_label)
 
     def _connect_signals(self):
         """Connect widget signals to their handlers."""
-        self.name_edit.textChanged.connect(self._on_name_changed)
-        self.description_edit.textChanged.connect(self._on_description_changed)
         self.add_task_button.clicked.connect(self._on_add_task)
 
     def _populate_task_combo(self):
@@ -269,9 +237,6 @@ class AutoLamellaWorkflowConfigWidget(QWidget):
 
     def _update_from_config(self):
         """Update widget from workflow config."""
-        self.name_edit.setText(self.workflow_config.name)
-        self.description_edit.setText(self.workflow_config.description)
-
         # Clear existing task widgets and selection
         self._clear_task_widgets()
         self._selected_task = None
@@ -348,20 +313,20 @@ class AutoLamellaWorkflowConfigWidget(QWidget):
         """Handle task removal request."""
         # Get display name for the confirmation dialog
         display_name = self._get_display_name(task_desc.name)
-        
+
         # Show confirmation dialog
         reply = QMessageBox.question(
             self,
             "Remove Task",
             f"Are you sure you want to remove the task '{display_name}'?",
             QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No  # Default to No for safety
+            QMessageBox.No,  # Default to No for safety
         )
-        
+
         # Only proceed if user confirms
         if reply != QMessageBox.Yes:
             return
-            
+
         # Remove from workflow config
         self.workflow_config.tasks = [
             t for t in self.workflow_config.tasks if t.name != task_desc.name
@@ -372,7 +337,7 @@ class AutoLamellaWorkflowConfigWidget(QWidget):
             widget = self._task_widgets[task_desc.name]
             widget.setParent(None)
             del self._task_widgets[task_desc.name]
-            
+
         # Clear selection if removed task was selected
         if self._selected_task == task_desc.name:
             self._selected_task = None
@@ -389,23 +354,23 @@ class AutoLamellaWorkflowConfigWidget(QWidget):
                 break
 
         self.workflow_changed.emit(self.workflow_config)
-        
+
     def _on_task_selected(self, task_desc: AutoLamellaTaskDescription):
         """Handle task selection."""
         # Don't reselect if already selected
         if self._selected_task == task_desc.name:
             return
-            
+
         # Update selection state
         self._selected_task = task_desc.name
-        
+
         # Update visual state of all widgets
         for task_name, widget in self._task_widgets.items():
             widget.set_selected(task_name == self._selected_task)
-            
+
         # Emit signal for external listeners
         self.task_selected.emit(task_desc)
-        
+
         # Print task content for debugging
         print(f"Selected task: {task_desc.name}")
         print(f"  Display name: {self._get_display_name(task_desc.name)}")
@@ -413,7 +378,7 @@ class AutoLamellaWorkflowConfigWidget(QWidget):
         print(f"  Supervise: {task_desc.supervise}")
         print(f"  Requires: {task_desc.requires}")
         print("=" * 50)
-        
+
     def _get_display_name(self, task_name: str) -> str:
         """Get the display name for a task."""
         if task_name in TASK_REGISTRY:
@@ -539,13 +504,17 @@ if __name__ == "__main__":
 
     widget = AutoLamellaWorkflowConfigWidget(test_config)
     widget.workflow_changed.connect(lambda config: print_workflow_config(config))
-    widget.task_selected.connect(lambda task: print(f"Task selected signal: {task.name}"))
+    widget.task_selected.connect(
+        lambda task: print(f"Task selected signal: {task.name}")
+    )
 
     # widget.setWindowTitle("AutoLamella Workflow Config Widget Test")
     # widget.resize(600, 400)
     # widget.show()
 
-    viewer.window.add_dock_widget(widget, name="AutoLamella Workflow Config", add_vertical_stretch=True)
+    viewer.window.add_dock_widget(
+        widget, name="AutoLamella Workflow Config", add_vertical_stretch=True
+    )
 
     napari.run()
     # sys.exit(app.exec_())
