@@ -40,16 +40,16 @@ try:
     except InvalidVersion:
         raise AutoScriptException(f"Failed to parse AutoScript version '{version}'")
 
-    if AUTOSCRIPT_VERSION < MINIMUM_AUTOSCRIPT_VERSION_4_7:
-        raise AutoScriptException(
-            f"AutoScript {version} found. Please update your AutoScript version to 4.7 or higher."
-        )
-    
     # special case for Monash development environment
     if os.environ.get("COMPUTERNAME", "hostname") == "MU00190108":
         print("Overwriting autoscript version to 4.7, for Monash dev install")
         AUTOSCRIPT_VERSION = MINIMUM_AUTOSCRIPT_VERSION_4_7
-        
+
+    if AUTOSCRIPT_VERSION < MINIMUM_AUTOSCRIPT_VERSION_4_7:
+        raise AutoScriptException(
+            f"AutoScript {version} found. Please update your AutoScript version to 4.7 or higher."
+        )
+
     from autoscript_sdb_microscope_client._dynamic_object_proxies import (
         CirclePattern,
         CleaningCrossSectionPattern,
