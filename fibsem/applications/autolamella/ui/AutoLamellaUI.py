@@ -1244,8 +1244,7 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
 
         idx = self.comboBox_current_lamella.currentIndex()
         if idx == -1:
-            # clear milling patterns
-            self.milling_widget.set_milling_stages([])
+            self.milling_widget.clear_all_milling_stages()
             return
 
         lamella: Lamella = self.experiment.positions[idx]
@@ -1600,6 +1599,9 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
         if self.experiment is None or self.experiment.positions == []:
             logging.warning("No lamella in the experiment, cannot remove.")
             return
+        
+        if self.milling_widget is None:
+            return
 
         pos = self.experiment.positions[idx]
         ret = fui.message_box_ui(
@@ -1634,6 +1636,10 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
     def fail_lamella_ui(self):
         idx = self.comboBox_current_lamella.currentIndex()
         if idx == -1:
+            return
+        if self.experiment is None or self.experiment.positions == []:
+            return
+        if self.milling_widget is None:
             return
 
         # get the current state
@@ -1953,6 +1959,13 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
     def _workflow_finished(self):
         """Handle the completion of the workflow."""
         logging.info("Workflow finished.")
+        if self.milling_widget is None or self.image_widget is None:
+            return
+        if self.microscope is None:
+            return
+        if self.experiment is None or self.protocol is None:
+            return
+
         self.WORKFLOW_IS_RUNNING = False
         self._workflow_stop_event.clear()
         self.milling_widget.milling_position_changed.connect(
@@ -1963,7 +1976,7 @@ class AutoLamellaUI(AutoLamellaMainUI.Ui_MainWindow, QtWidgets.QMainWindow):
 
         # clear the image settings save settings etc
         self.image_widget.checkBox_image_save_image.setChecked(False)
-        self.image_widget.lineEdit_image_path.setText(self.experiment.path)
+        self.image_widget.lineEdit_image_path.setText(str(self.experiment.path))
         self.image_widget.lineEdit_image_label.setText("default-image")
         self.update_ui()
 

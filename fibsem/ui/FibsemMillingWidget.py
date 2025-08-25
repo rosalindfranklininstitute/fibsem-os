@@ -382,9 +382,9 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
     def clear_all_milling_stages(self):
         """Remove all milling stages from the widget."""
         self.milling_stages = []
-        self.comboBox_milling_stage.currentIndexChanged.disconnect()
+        self.comboBox_milling_stage.blockSignals(True)
         self.comboBox_milling_stage.clear()
-        self.comboBox_milling_stage.currentIndexChanged.connect(self.update_milling_stage_ui)
+        self.comboBox_milling_stage.blockSignals(False)
         self.update_selected_milling_stages_ui()
 
         remove_all_napari_shapes_layers(self.viewer) # remove all shape layers
@@ -394,17 +394,18 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         """Set the milling stages in the widget and update the UI."""
         logging.debug(f"Setting milling stages: {len(milling_stages)}")
         self.milling_stages = milling_stages
-        
+
         # very explicitly set what is happening
-        self.comboBox_milling_stage.currentIndexChanged.disconnect()
+        self.comboBox_milling_stage.blockSignals(True)
+        self.comboBox_patterns.blockSignals(True)
         self.comboBox_milling_stage.clear()
         self.comboBox_milling_stage.addItems([stage.name for stage in self.milling_stages])
-        self.comboBox_milling_stage.currentIndexChanged.connect(self.update_milling_stage_ui)
-        
-        self.comboBox_patterns.currentIndexChanged.disconnect()
-        self.comboBox_patterns.setCurrentText(self.milling_stages[0].pattern.name)
-        self.comboBox_patterns.currentIndexChanged.connect(self.update_current_selected_pattern)
-        
+        if self.milling_stages:
+            self.comboBox_patterns.setCurrentText(self.milling_stages[0].pattern.name)
+
+        self.comboBox_milling_stage.blockSignals(False)
+        self.comboBox_patterns.blockSignals(False)
+
         logging.debug(f"Set milling stages: {len(milling_stages)}")
         self.update_milling_stage_ui()
         self.update_selected_milling_stages_ui()
