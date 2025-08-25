@@ -3,17 +3,14 @@ import inspect
 from dataclasses import fields
 from enum import Enum
 
-from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QGridLayout,
-    QGroupBox,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
-    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -396,41 +393,28 @@ class AutoLamellaTaskConfigWidget(QWidget):
 
 
 if __name__ == "__main__":
-    import sys
-    from PyQt5.QtWidgets import QApplication
-    from fibsem.applications.autolamella.workflows.tasks import SpotBurnFiducialTaskConfig, SetupLamellaTaskConfig, MillPolishingTaskConfig, MillUndercutTaskConfig, MillTrenchTaskConfig
-    
+    import napari
+    from fibsem.applications.autolamella.workflows.tasks import (
+        SpotBurnFiducialTaskConfig,
+        SetupLamellaTaskConfig,
+        MillPolishingTaskConfig,
+        MillUndercutTaskConfig,
+        MillTrenchTaskConfig,
+    )
     from fibsem.ui.widgets.autolamella_task_protocol_widget import DEFAULT_PROTOCOL
 
-    # app = QApplication(sys.argv)
-    
     # Create test config
     test_config = SetupLamellaTaskConfig(
         milling_angle=15.0,
         use_fiducial=True
     )
-    # test_config = MillUndercutTaskConfig(
-    #     orientation="SEM", 
-    #     milling_angles=[25, 20]
-    # )
-    # test_config = SpotBurnFiducialTaskConfig(
-    #     milling_current=50.0e-12,
-    #     exposure_time=5,
-    #     orientation="FIB"
-    # )
-
     test_config = DEFAULT_PROTOCOL.task_config['MILL_ROUGH']
 
-    import napari
-    viewer = napari.Viewer()
-
     # Create widget
+    viewer = napari.Viewer()
     widget = AutoLamellaTaskConfigWidget(test_config)
     widget.config_changed.connect(lambda config: print(f"Config changed: {config}"))
-    
     widget.setWindowTitle("AutoLamella Task Config Widget Test")
-    # widget.resize(400, 600)
-    # widget.show()
     viewer.window.add_dock_widget(widget, area="right", add_vertical_stretch=False)
 
     napari.run()

@@ -3,8 +3,10 @@ from typing import Optional, Type
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
+    QFileDialog,
+    QMenuBar,
+    QMessageBox,
     QScrollArea,
-    QSplitter,
     QVBoxLayout,
     QWidget,
 )
@@ -28,6 +30,7 @@ TASK_PROTOCOL_PATH = os.path.join(
 )
 DEFAULT_PROTOCOL = AutoLamellaTaskProtocol.load(TASK_PROTOCOL_PATH)
 
+# TODO: support multiple of the same task-type -> migrate to task-type rather than name
 
 class AutoLamellaTaskProtocolWidget(QWidget):
     """Widget for configuring AutoLamella task protocols including workflow and task configurations."""
@@ -53,6 +56,9 @@ class AutoLamellaTaskProtocolWidget(QWidget):
         """Create and configure all UI elements."""
         main_layout = QVBoxLayout()
         self.setLayout(main_layout)
+
+        # Create menu bar
+        self._create_menu_bar(main_layout)
 
         # Create scroll area
         scroll_area = QScrollArea()
@@ -87,6 +93,76 @@ class AutoLamellaTaskProtocolWidget(QWidget):
         # Set content widget in scroll area and add to main layout
         scroll_area.setWidget(content_widget)
         main_layout.addWidget(scroll_area)
+
+    def _create_menu_bar(self, main_layout: QVBoxLayout):
+        """Create and configure the menu bar."""
+        menu_bar = QMenuBar()
+        main_layout.addWidget(menu_bar)
+
+        # Create File menu
+        file_menu = menu_bar.addMenu("File")
+        if file_menu is None:
+            return
+
+        # Add Save Protocol action
+        save_action = file_menu.addAction("Save Protocol")
+        if save_action:
+            save_action.triggered.connect(self._save_protocol)
+
+        # Add Load Protocol action
+        load_action = file_menu.addAction("Load Protocol")
+        if load_action:
+            load_action.triggered.connect(self._load_protocol)
+
+    def _save_protocol(self):
+        """Save the current protocol to a YAML file."""
+        try:
+            # Get file path from user
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                caption="Save Protocol",
+                directory=os.path.join(
+                    os.path.dirname(TASK_PROTOCOL_PATH),
+                    "autolamella-protocol.yaml"),
+                filter="YAML Files (*.yaml *.yml);;All Files (*)",
+            )
+            if file_path == "":
+                return
+
+            # Get current protocol
+            protocol = self.get_protocol()
+            protocol.save(file_path)
+
+            QMessageBox.information(
+                self, "Success", f"Protocol saved successfully to:\n{file_path}"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save protocol:\n{str(e)}")
+
+    def _load_protocol(self):
+        """Load a protocol from a YAML file."""
+        try:
+            # Get file path from user
+            file_path, _ = QFileDialog.getOpenFileName(
+                parent=self,
+                caption="Load Protocol",
+                directory=os.path.dirname(TASK_PROTOCOL_PATH),
+                filter="YAML Files (*.yaml *.yml);;All Files (*)"
+            )
+            if file_path == "":
+                return
+
+            # Load protocol from YAML file
+            protocol = AutoLamellaTaskProtocol.load(file_path)
+            self.set_protocol(protocol)
+
+            QMessageBox.information(
+                self, "Success", f"Protocol loaded successfully from:\n{file_path}"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load protocol:\n{str(e)}")
 
     def _connect_signals(self):
         """Connect widget signals to their handlers."""

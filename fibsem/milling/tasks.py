@@ -55,7 +55,7 @@ class FibsemMillingTaskConfig:
         return {
             "name": self.name,
             "field_of_view": self.field_of_view,
-            "channel": self.channel.value,
+            "channel": self.channel.name,
             "alignment": self.alignment.to_dict(),
             "acquisition": self.acquisition.to_dict(),
             "stages": [stage.to_dict() for stage in self.stages],
@@ -68,7 +68,7 @@ class FibsemMillingTaskConfig:
         return cls(
             name=data.get("name", "Milling Task"),
             field_of_view=data.get("field_of_view", 150e-6),
-            channel=BeamType(data.get("channel", BeamType.ION.value)),
+            channel=BeamType[data.get("channel", BeamType.ION.name)],
             alignment=MillingAlignment.from_dict(alignment),
             acquisition=MillingTaskAcquisitionSettings.from_dict(acquisition),
             stages=[FibsemMillingStage.from_dict(stage) for stage in data.get("stages", [])],
