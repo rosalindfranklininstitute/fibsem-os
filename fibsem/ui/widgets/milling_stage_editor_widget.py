@@ -746,7 +746,10 @@ class FibsemMillingStageEditorWidget(QWidget):
 
         self.viewer = viewer
         self.image: FibsemImage = FibsemImage.generate_blank_image(hfw=80e-6)
-        self.image_layer: NapariImageLayer = self.viewer.add_image(data=self.image.data, name="FIB Image") # type: ignore
+        if self.viewer is not None:
+            self.image_layer: NapariImageLayer = self.viewer.add_image(data=self.image.data, name="FIB Image") # type: ignore
+        else:
+            self.image_layer = None
         self._widgets: List[FibsemMillingStageWidget] = []
 
         # add widget for scroll content
@@ -813,7 +816,8 @@ class FibsemMillingStageEditorWidget(QWidget):
         self.list_widget_milling_stages.itemSelectionChanged.connect(self._on_selected_stage_changed)
         self.list_widget_milling_stages.itemChanged.connect(self.update_milling_stage_display)
         self.list_widget_milling_stages.itemChanged.connect(self._on_milling_stage_updated)
-        self.viewer.mouse_drag_callbacks.append(self._on_single_click)
+        if self.viewer is not None:
+            self.viewer.mouse_drag_callbacks.append(self._on_single_click)
 
         # set initial selection to the first item
         if self.list_widget_milling_stages.count() > 0:
@@ -1002,6 +1006,9 @@ class FibsemMillingStageEditorWidget(QWidget):
         if self.is_updating_pattern:
             return # block updates while updating patterns
 
+        if self.viewer is None or self.image_layer is None:
+            return
+
         milling_stages = self.get_milling_stages()
 
         if not milling_stages:
@@ -1035,6 +1042,8 @@ class FibsemMillingStageEditorWidget(QWidget):
 
     def set_image(self, image: FibsemImage) -> None:
         """Set the image for the milling stage editor."""
+        if self.viewer is None:
+            return
 
         self.image = image
         try:
