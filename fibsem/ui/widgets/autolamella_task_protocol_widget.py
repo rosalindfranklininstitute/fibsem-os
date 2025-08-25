@@ -3,6 +3,7 @@ from typing import Optional, Type
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
+    QScrollArea,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -50,11 +51,21 @@ class AutoLamellaTaskProtocolWidget(QWidget):
 
     def _setup_ui(self):
         """Create and configure all UI elements."""
-        # Main vertical splitter
-        # main_splitter = QSplitter(Qt.Orientation.Vertical)
         main_layout = QVBoxLayout()
-        # main_layout.addWidget(main_splitter)
         self.setLayout(main_layout)
+
+        # Create scroll area
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
+        # Create content widget for scroll area
+        content_widget = QWidget()
+        content_layout = QVBoxLayout()
+        content_widget.setLayout(content_layout)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_area.setContentsMargins(0, 0, 0, 0)
 
         # Add the workflow config widget
         self.workflow_widget = AutoLamellaWorkflowConfigWidget(
@@ -63,18 +74,19 @@ class AutoLamellaTaskProtocolWidget(QWidget):
         self.workflow_collapsible = QCollapsible("Workflow Configuration", self)
         self.workflow_collapsible.addWidget(self.workflow_widget)
         self.workflow_collapsible.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(self.workflow_collapsible)  # type: ignore
+        content_layout.addWidget(self.workflow_collapsible)  # type: ignore
 
         # Add the task config widget
         self.task_config_widget = AutoLamellaTaskConfigWidget()
         self.task_collapsible = QCollapsible("Task Configuration", self)
         self.task_collapsible.addWidget(self.task_config_widget)
         self.task_collapsible.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(self.task_collapsible)  # type: ignore
+        content_layout.addWidget(self.task_collapsible)  # type: ignore
+        content_layout.addStretch()
 
-        # Set initial splitter proportions (60% workflow, 40% task config)
-        # main_splitter.setSizes([600, 400])
-        main_layout.addStretch()
+        # Set content widget in scroll area and add to main layout
+        scroll_area.setWidget(content_widget)
+        main_layout.addWidget(scroll_area)
 
     def _connect_signals(self):
         """Connect widget signals to their handlers."""
@@ -127,10 +139,6 @@ class AutoLamellaTaskProtocolWidget(QWidget):
             task_config = DEFAULT_PROTOCOL.task_config.get(task_desc.name)
             if task_config is None:
                 raise ValueError(f"No default config found for task: {task_desc.name}")
-            # TODO: make sure we have valid default milling for each new config
-            # task_class = TASK_REGISTRY[task_desc.name]
-            # task_config_cls: Type[AutoLamellaTaskConfig] = task_class.config_cls  # type: ignore
-            # task_config = task_config_cls()
             # Store it in the protocol
             self.protocol.task_config[task_desc.name] = task_config
 
@@ -163,54 +171,19 @@ if __name__ == "__main__":
 
     from fibsem.applications.autolamella.structures import AutoLamellaTaskDescription
 
-    # # Create test protocol
-    # test_workflow_config = AutoLamellaWorkflowConfig(
-    #     name="Test Workflow",
-    #     description="A test workflow for demonstration",
-    #     tasks=[
-    #         AutoLamellaTaskDescription(
-    #             name="SETUP_LAMELLA", supervise=True, required=True
-    #         ),
-    #         AutoLamellaTaskDescription(
-    #             name="MILL_ROUGH", supervise=False, required=True
-    #         ),
-    #         AutoLamellaTaskDescription(
-    #             name="MILL_POLISHING", supervise=True, required=False
-    #         ),
-    #     ],
-    # )
-
-    # test_protocol = AutoLamellaTaskProtocol(
-    #     name="Test Protocol",
-    #     description="A test protocol for demonstration",
-    #     version="1.0",
-    #     workflow_config=test_workflow_config,
-    #     task_config={}
-    # )
-
     def print_workflow_config(config: AutoLamellaWorkflowConfig):
         print(f"Protocol Name: {config.name}")
         print(f"Description: {config.description}")
         print("Tasks:")
         for task in config.tasks:
-            print(
-                f" - {task.name} (Supervise: {task.supervise}, Required: {task.required})"
-            )
+            print(f" - {task.name} (Supervise: {task.supervise}, Required: {task.required})")
 
     viewer = napari.Viewer()
-
     widget = AutoLamellaTaskProtocolWidget(DEFAULT_PROTOCOL)
-    widget.protocol_changed.connect(
-        lambda protocol: print(f"Protocol changed: {protocol.name}")
-    )
+    widget.protocol_changed.connect(lambda protocol: print(f"Protocol changed: {protocol.name}"))
     widget.workflow_changed.connect(lambda config: print_workflow_config(config))
-    widget.task_selected.connect(
-        lambda task: print(f"Protocol signal - Task selected: {task.name}")
-    )
-    widget.task_config_changed.connect(
-        lambda config: print(f"Protocol signal - Task config changed: {config}")
-    )
-
+    widget.task_selected.connect(lambda task: print(f"Protocol signal - Task selected: {task.name}"))
+    widget.task_config_changed.connect(lambda config: print(f"Protocol signal - Task config changed: {config}"))
     viewer.window.add_dock_widget(
         widget, name="AutoLamella Task Protocol", add_vertical_stretch=False
     )

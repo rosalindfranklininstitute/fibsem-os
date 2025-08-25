@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
-    QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -241,15 +241,15 @@ class AutoLamellaTaskConfigWidget(QWidget):
         self._setup_ui()
         if self.task_config:
             self._update_from_config()
-            
-    
+
     def _setup_ui(self):
         """Create and configure all UI elements."""
         self.main_layout = QVBoxLayout()
         self.setLayout(self.main_layout)
 
-        self.form_layout = QFormLayout()
-        self.main_layout.addLayout(self.form_layout)
+        self.grid_layout = QGridLayout()
+        self.main_layout.addLayout(self.grid_layout)
+        self.current_row = 0
 
         # initialise milling_task_widget 
         microscope, settings = utils.setup_session()
@@ -265,7 +265,8 @@ class AutoLamellaTaskConfigWidget(QWidget):
         self.milling_task_widget.task_config_updated.connect(self._on_milling_config_updated)
 
         # TODO: wrap in collapsible
-        # self.main_layout.addStretch()
+        self.main_layout.addStretch()
+        self.milling_task_widget.setMinimumHeight(700)
 
     def set_task_config(self, task_config: Optional[AutoLamellaTaskConfig]):
         """Set the task configuration to edit."""
@@ -302,7 +303,9 @@ class AutoLamellaTaskConfigWidget(QWidget):
                 if hasattr(field, 'metadata') and 'help' in field.metadata:
                     label.setToolTip(field.metadata['help'])
                     
-                self.form_layout.addRow(label, widget)
+                self.grid_layout.addWidget(label, self.current_row, 0)
+                self.grid_layout.addWidget(widget, self.current_row, 1)
+                self.current_row += 1
     
         if self.task_config.milling:
             self.milling_task_widget.set_task_configs(self.task_config.milling)
@@ -356,13 +359,13 @@ class AutoLamellaTaskConfigWidget(QWidget):
         if field_name in self.parameter_widgets:
             param_widget = self.parameter_widgets[field_name]
             new_value = param_widget.get_value()
-            
+
             # Update the task config
             setattr(self.task_config, field_name, new_value)
-            
+
             # Emit change signal
             self.config_changed.emit(self.task_config)
-    
+
     def _on_milling_config_updated(self, task_name: str, milling_config):
         """Handle milling task config updates."""
         if self.task_config and hasattr(self.task_config, 'milling'):
@@ -370,17 +373,18 @@ class AutoLamellaTaskConfigWidget(QWidget):
             if not self.task_config.milling:
                 self.task_config.milling = {}
             self.task_config.milling[task_name] = milling_config
-            
+
             # Emit change signal
             self.config_changed.emit(self.task_config)
-    
+
     def _clear_form(self):
-        """Clear all widgets from the form layout."""
-        while self.form_layout.count():
-            child = self.form_layout.takeAt(0)
-            if child.widget():
+        """Clear all widgets from the grid layout."""
+        while self.grid_layout.count():
+            child = self.grid_layout.takeAt(0)
+            if child and child.widget():
                 child.widget().setParent(None)
         self.parameter_widgets.clear()
+        self.current_row = 0
     
     def _format_field_name(self, field_name: str) -> str:
         """Format field name for display (convert snake_case to Title Case)."""
@@ -396,7 +400,9 @@ if __name__ == "__main__":
     from PyQt5.QtWidgets import QApplication
     from fibsem.applications.autolamella.workflows.tasks import SpotBurnFiducialTaskConfig, SetupLamellaTaskConfig, MillPolishingTaskConfig, MillUndercutTaskConfig, MillTrenchTaskConfig
     
-    app = QApplication(sys.argv)
+    from fibsem.ui.widgets.autolamella_task_protocol_widget import DEFAULT_PROTOCOL
+
+    # app = QApplication(sys.argv)
     
     # Create test config
     test_config = SetupLamellaTaskConfig(
@@ -413,12 +419,18 @@ if __name__ == "__main__":
     #     orientation="FIB"
     # )
 
+    test_config = DEFAULT_PROTOCOL.task_config['MILL_ROUGH']
+
+    import napari
+    viewer = napari.Viewer()
+
     # Create widget
     widget = AutoLamellaTaskConfigWidget(test_config)
     widget.config_changed.connect(lambda config: print(f"Config changed: {config}"))
     
     widget.setWindowTitle("AutoLamella Task Config Widget Test")
-    widget.resize(400, 600)
-    widget.show()
-    
-    sys.exit(app.exec_())
+    # widget.resize(400, 600)
+    # widget.show()
+    viewer.window.add_dock_widget(widget, area="right", add_vertical_stretch=False)
+
+    napari.run()
