@@ -98,8 +98,7 @@ class FibsemMillingTaskWidget(QWidget):
             self.task_list.setCurrentRow(0)
 
         # if only one task, hide the task_list
-        if self.task_list.count() <= 1:
-            self.task_list.hide()
+        self.task_list.setVisible(self.task_list.count() > 1)
 
     def _on_task_selection_changed(
         self, current: QListWidgetItem, _previous: QListWidgetItem
