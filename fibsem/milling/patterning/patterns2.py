@@ -113,8 +113,10 @@ class BitmapPattern(BasePattern[FibsemBitmapSettings]):
 
         if self.interpolate is None:
             interp = None
+        elif self.bicubic:
+            interp = "bicubic"
         else:
-            interp = "bicubic" if self.bicubic else "nearest"
+            interp = "nearest"
 
         shape = FibsemBitmapSettings(
             width=self.width,
@@ -188,8 +190,10 @@ class TrenchBitmapPattern(BasePattern[FibsemBitmapSettings]):
 
         if self.interpolate is None:
             interp = None
+        elif self.bicubic:
+            interp = "bicubic"
         else:
-            interp = "bicubic" if self.bicubic else "nearest"
+            interp = "nearest"
 
         # mill settings
         lower_pattern_settings = FibsemBitmapSettings(
