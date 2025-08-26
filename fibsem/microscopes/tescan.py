@@ -725,6 +725,9 @@ class TescanMicroscope(FibsemMicroscope):
 
         return FibsemStagePosition(x=0, y=y_move, z=z_move)
 
+    def _inverse_y_corrected_stage_movement(self, dy: float, dz: float, beam_type: BeamType = BeamType.ELECTRON) -> float:
+        return dy # TODO: implement correctly with y-correction
+
     def get_manipulator_state(self) -> bool:
 
         """returns true if nanomanipulator is inserted. Manipulator positions must be calibrated and stored in system.yaml file if not done so
