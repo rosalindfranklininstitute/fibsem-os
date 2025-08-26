@@ -175,6 +175,7 @@ class AutoLamellaTaskConfig(ABC):
     """Configuration for AutoLamella tasks."""
     task_name: ClassVar[str]
     display_name: ClassVar[str]
+    unique_name: str = "NULL" # unique name for identifying in multi-task workflows
     imaging: ImageSettings = field(default_factory=ImageSettings)
     milling: Dict[str, FibsemMillingTaskConfig] = field(default_factory=dict)
 
@@ -226,7 +227,7 @@ class AutoLamellaTaskConfig(ABC):
 @evented
 @dataclass
 class AutoLamellaTaskDescription:
-    name: str
+    name: str # unique_name
     supervise: bool
     required: bool
     requires: List[str] = field(default_factory=list)
@@ -310,7 +311,7 @@ class AutoLamellaTaskProtocol:
     name: str = "AutoLamella Task Protocol"
     description: str = "Protocol for AutoLamella"
     version: str = "1.0"
-    task_config: Dict[str, AutoLamellaTaskConfig] = field(default_factory=dict)
+    task_config: Dict[str, AutoLamellaTaskConfig] = field(default_factory=dict)   # unique_name: AutoLamellaTaskConfig
     workflow_config: AutoLamellaWorkflowConfig = field(default_factory=AutoLamellaWorkflowConfig)
 
     def to_dict(self) -> Dict[str, Any]:
