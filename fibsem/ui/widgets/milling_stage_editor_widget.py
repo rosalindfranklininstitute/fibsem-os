@@ -745,7 +745,7 @@ class FibsemMillingStageEditorWidget(QWidget):
         self._show_advanced: bool = False
 
         self.viewer = viewer
-        self.image: FibsemImage = FibsemImage.generate_blank_image(hfw=80e-6)
+        self.image: FibsemImage = FibsemImage.generate_blank_image(hfw=80e-6, random=True)
         if self.viewer is not None:
             self.image_layer: NapariImageLayer = self.viewer.add_image(data=self.image.data, name="FIB Image") # type: ignore
         else:

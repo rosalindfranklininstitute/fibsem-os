@@ -15,9 +15,9 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from superqt import QCollapsible
 
 from fibsem.applications.autolamella.structures import AutoLamellaTaskConfig
-from fibsem.applications.autolamella.workflows.tasks import TASK_REGISTRY
 from fibsem.ui.widgets.milling_task_widget import FibsemMillingTaskWidget
 from fibsem import utils
 
@@ -244,26 +244,36 @@ class AutoLamellaTaskConfigWidget(QWidget):
         self.main_layout = QVBoxLayout()
         self.setLayout(self.main_layout)
 
-        self.grid_layout = QGridLayout()
-        self.main_layout.addLayout(self.grid_layout)
+        # Create collapsible section for task parameters
+        self.task_params_collapsible = QCollapsible("Task Parameters", self)
+        
+        # Create content widget for parameters
+        self.params_widget = QWidget()
+        self.grid_layout = QGridLayout(self.params_widget)
         self.current_row = 0
+        
+        self.task_params_collapsible.addWidget(self.params_widget)
+
+        # Create collapsible section for milling parameters
+        self.milling_params_collapsible = QCollapsible("Milling Task Parameters", self)
 
         # initialise milling_task_widget 
-        microscope, settings = utils.setup_session()
+        microscope, settings = utils.setup_session()  # TODO: pass in from the parent if available...
         self.milling_task_widget = FibsemMillingTaskWidget(
             microscope=microscope, task_configs={}, 
             milling_enabled=False, 
             parent=self
         )
-        self.milling_task_widget.hide()
-        self.main_layout.addWidget(self.milling_task_widget)
+        self.milling_task_widget.setMinimumHeight(600)
+        self.milling_params_collapsible.addWidget(self.milling_task_widget)
+
+        self.main_layout.addWidget(self.task_params_collapsible)    # type: ignore
+        self.main_layout.addWidget(self.milling_params_collapsible) # type: ignore
         
         # Connect milling widget signals
         self.milling_task_widget.task_config_updated.connect(self._on_milling_config_updated)
 
-        # TODO: wrap in collapsible
         self.main_layout.addStretch()
-        self.milling_task_widget.setMinimumHeight(700)
 
     def set_task_config(self, task_config: Optional[AutoLamellaTaskConfig]):
         """Set the task configuration to edit."""
@@ -278,37 +288,46 @@ class AutoLamellaTaskConfigWidget(QWidget):
         # Clear existing widgets
         self._clear_form()
         
-        # Get all configurable parameters using the parameters property
-        for param_name in self.task_config.parameters:
-            # Get field info and current value
-            field = next(f for f in fields(self.task_config) if f.name == param_name)
-            value = getattr(self.task_config, param_name)
-            
-            # Create parameter widget
-            param_widget = self._create_parameter_widget(param_name, value, field.type, field.metadata)
-            if param_widget:
-                self.parameter_widgets[param_name] = param_widget
+        # Show/hide task parameters section
+        if self.task_config.parameters:
+            # Get all configurable parameters using the parameters property
+            for param_name in self.task_config.parameters:
+                # Get field info and current value
+                field = next(f for f in fields(self.task_config) if f.name == param_name)
+                value = getattr(self.task_config, param_name)
                 
-                # Add to form
-                widget = param_widget.create_widget()
-                
-                # Connect change signals to update config
-                self._connect_widget_signals(widget, param_name)
-                
-                # Create label with tooltip if available
-                label = QLabel(self._format_field_name(param_name))
-                if hasattr(field, 'metadata') and 'help' in field.metadata:
-                    label.setToolTip(field.metadata['help'])
+                # Create parameter widget
+                param_widget = self._create_parameter_widget(param_name, value, field.type, field.metadata)
+                if param_widget:
+                    self.parameter_widgets[param_name] = param_widget
                     
-                self.grid_layout.addWidget(label, self.current_row, 0)
-                self.grid_layout.addWidget(widget, self.current_row, 1)
-                self.current_row += 1
+                    # Add to form
+                    widget = param_widget.create_widget()
+                    
+                    # Connect change signals to update config
+                    self._connect_widget_signals(widget, param_name)
+                    
+                    # Create label with tooltip if available
+                    label = QLabel(self._format_field_name(param_name))
+                    if hasattr(field, 'metadata') and 'help' in field.metadata:
+                        label.setToolTip(field.metadata['help'])
+                        
+                    self.grid_layout.addWidget(label, self.current_row, 0)
+                    self.grid_layout.addWidget(widget, self.current_row, 1)
+                    self.current_row += 1
+            
+            self.task_params_collapsible.show()
+        else:
+            self.task_params_collapsible.hide()
     
+        # Show/hide milling parameters section
         if self.task_config.milling:
             self.milling_task_widget.set_task_configs(self.task_config.milling)
-            self.milling_task_widget.show()
+            self.milling_params_collapsible.show()
         else:
-            self.milling_task_widget.hide()
+            self.milling_task_widget.set_task_configs({})
+            self.milling_task_widget.config_widget.milling_editor_widget.clear_milling_stages()
+            self.milling_params_collapsible.hide()
 
     def _create_parameter_widget(self, name: str, value: Any, annotation: type, metadata: Optional[dict] = None) -> Optional[ParameterWidget]:
         """Create the appropriate parameter widget for the given type."""

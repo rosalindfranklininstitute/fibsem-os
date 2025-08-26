@@ -188,9 +188,13 @@ class AutoLamellaTaskConfig(ABC):
 
     def to_dict(self) -> dict:
         """Convert configuration to a dictionary."""
-        ddict = asdict(self)
-        ddict["imaging"] = self.imaging.to_dict()
+        ddict = {}
         ddict["milling"] = {k: v.to_dict() for k, v in self.milling.items()}
+        # TODO: explicitly not saving imaging until implemented
+        # extract all the .parameters into a "parameters subdict"
+        ddict["parameters"] = {}
+        for k in self.parameters:
+            ddict["parameters"][k] = getattr(self, k)
         return ddict
 
     @classmethod
@@ -210,8 +214,8 @@ class AutoLamellaTaskConfig(ABC):
                     # QUERY: should we raise an error here or just ignore unknown parameters?
                     raise ValueError(f"Unknown parameter '{key}' in task configuration.")
 
-        if "imaging" in ddict:
-            kwargs["imaging"] = ImageSettings.from_dict(ddict["imaging"])
+        # if "imaging" in ddict:
+            # kwargs["imaging"] = ImageSettings.from_dict(ddict["imaging"])
         if "milling" in ddict:
             kwargs["milling"] = {
                 k: FibsemMillingTaskConfig.from_dict(v) for k, v in ddict["milling"].items()

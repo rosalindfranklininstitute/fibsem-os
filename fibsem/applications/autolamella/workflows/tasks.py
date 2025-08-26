@@ -669,9 +669,9 @@ class SetupLamellaTask(AutoLamellaTask):
         polishing_milling_task_config = self.lamella.task_config[MillPolishingTaskConfig.task_name].milling[MILL_POLISHING_KEY]
         fiducial_task_config = self.config.milling[FIDUCIAL_KEY]
 
-        assert rough_milling_task_config.field_of_view == polishing_milling_task_config.field_of_view, \
+        assert np.isclose(rough_milling_task_config.field_of_view, polishing_milling_task_config.field_of_view, atol=1e-6), \
             "Rough and polishing milling tasks must have the same field of view."
-        assert rough_milling_task_config.field_of_view == fiducial_task_config.field_of_view, \
+        assert np.isclose(rough_milling_task_config.field_of_view, fiducial_task_config.field_of_view, atol=1e-6), \
             "Rough milling and fiducial tasks must have the same field of view."
 
         image_settings.hfw = rough_milling_task_config.field_of_view
