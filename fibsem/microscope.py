@@ -2900,13 +2900,14 @@ class ThermoMicroscope(FibsemMicroscope):
             height=pattern_settings.height,
             depth=pattern_settings.depth,
         )
-        pitch = rectangle.pitch_x
-        rectangle.enabled = False
 
-        new_shape = np.round(
-            np.asarray((pattern_settings.height, pattern_settings.width), dtype=float)
-            / pitch
-        ).astype(int)
+        new_shape = (
+            int(round(pattern_settings.height / rectangle.pitch_y)),
+            int(round(pattern_settings.width / rectangle.pitch_x)),
+        )
+
+        # Disable after calculations just in case values are cleared
+        rectangle.enabled = False
 
         if pattern_settings.interpolate == "bicubic":
             order = 3
