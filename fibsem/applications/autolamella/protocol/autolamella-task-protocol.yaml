@@ -68,7 +68,7 @@ tasks:
   SETUP_LAMELLA:
     name: SETUP_LAMELLA
     description: select lamella position and milling pattern position
-    parameters: # dict
+    parameters:
       milling_angle: 15 # deg
       use_fiducial: true
     milling:    
@@ -92,6 +92,113 @@ tasks:
                 width: 1.0e-06
                 point: {"x": 25.0e-6, "y": 0.0e-6}
             strategy: {}
+      # stress-relief:
+      #   name: Stress Relief Features
+      #   field_of_view: 80.0e-6
+      #   alignment: {enabled: true}
+      #   acquisition: {enabled: true}
+      #   stages:
+      #   -   name: MicroExpansion
+      #       milling:
+      #           application_file: Si
+      #           hfw: 80.0e-6
+      #           milling_current: 2.0e-09
+      #           preset: 30 keV; 2.5 nA
+      #       pattern:
+      #           depth: 1.0e-06
+      #           distance: 1.0e-05
+      #           height: 1.8e-05
+      #           name: MicroExpansion
+      #           width: 5.0e-07
+      #       strategy: {}
+      #   -   name: Notch 01
+      #       milling:
+      #           application_file: Si-ccs
+      #           hfw: 80.0e-6
+      #           milling_current: 2.0e-09
+      #           preset: 30 keV; 2.5 nA
+      #       pattern:
+      #           depth: 2.5e-06
+      #           distance: 2.0e-06
+      #           flip: 0
+      #           hheight: 2.0e-07
+      #           hwidth: 4.0e-06
+      #           name: WaffleNotch
+      #           vheight: 2.0e-06
+      #           vwidth: 2.0e-07
+      #           point: {"x": 7.0e-6, "y": 0.0e-6}
+      #       strategy: {}
+      # mill_rough:
+      #   name: Rough Milling
+      #   field_of_view: 80.0e-6
+      #   alignment: {enabled: true}
+      #   acquisition: {enabled: true}
+      #   stages:
+      #   -   name: Rough Mill 01
+      #       milling:
+      #           application_file: Si-ccs
+      #           hfw: 8.0e-05
+      #           milling_current: 7.4e-10
+      #       pattern:
+      #           cross_section: CleaningCrossSection
+      #           depth: 6.5e-07
+      #           lower_trench_height: 3.5e-06
+      #           name: Trench
+      #           spacing: 4.6e-06
+      #           upper_trench_height: 3.5e-06
+      #           width: 1.0e-05
+      #       strategy: {}
+      #   -   name: Rough Mill 02
+      #       milling:
+      #           application_file: Si-ccs
+      #           hfw: 8.0e-05
+      #           milling_current: 2.0e-10
+      #           patterning_mode: Serial
+      #       pattern:
+      #           cross_section: CleaningCrossSection
+      #           depth: 6.5e-07
+      #           lower_trench_height: 2.0e-06
+      #           name: Trench
+      #           spacing: 1.6e-06
+      #           upper_trench_height: 2.0e-06
+      #           width: 9.5e-06
+      #       strategy: {}
+      # mill_polishing:
+      #   name: Polishing
+      #   field_of_view: 80.0e-6
+      #   alignment: {enabled: true}
+      #   acquisition: {enabled: true}
+      #   stages:
+      #   -   name: Polishing Mill 01
+      #       milling:
+      #           application_file: Si-ccs
+      #           hfw: 8.0e-05
+      #           milling_current: 6.0e-11
+      #           patterning_mode: Serial
+      #       pattern:
+      #           cross_section: CleaningCrossSection
+      #           depth: 4.0e-07
+      #           lower_trench_height: 7.0e-07
+      #           name: Trench
+      #           spacing: 4.5e-07
+      #           upper_trench_height: 7.0e-07
+      #           width: 9.0e-06
+      #       strategy: {}
+      #   -   name: Polishing Mill 02   
+      #       milling:
+      #           application_file: Si-ccs
+      #           hfw: 8.0e-05
+      #           milling_current: 6.0e-11
+      #           patterning_mode: Serial
+      #       pattern:
+      #           cross_section: CleaningCrossSection
+      #           depth: 4.0e-07
+      #           lower_trench_height: 2.5e-07
+      #           name: Trench
+      #           spacing: 3.0e-07
+      #           upper_trench_height: 2.5e-07
+      #           width: 9.0e-06
+      #       strategy: {}
   MILL_ROUGH:
     name: MILL_ROUGH
     description: mill rough lamella trenches, and stress relief features
