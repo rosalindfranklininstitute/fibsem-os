@@ -670,7 +670,7 @@ class FibsemMinimapWidget(FibsemMinimapWidgetUI.Ui_MainWindow, QMainWindow):
         """Draws the current stage position on the image."""
         current_stage_position = deepcopy(self.microscope.get_stage_position())
         if USE_INVERSE_PROJECTION:
-            points = tiled.reproject_stage_positions_onto_image2(self.microscope, self.image, [current_stage_position])
+            points = tiled.reproject_stage_positions_onto_image2(self.image, [current_stage_position])
         else:
             points = tiled.reproject_stage_positions_onto_image(self.image, [current_stage_position])
         points[0].name = "Current Position"
@@ -691,7 +691,7 @@ class FibsemMinimapWidget(FibsemMinimapWidgetUI.Ui_MainWindow, QMainWindow):
         if self.image and self.positions:
 
             if USE_INVERSE_PROJECTION:
-                points = tiled.reproject_stage_positions_onto_image2(self.microscope, self.image, self.positions)
+                points = tiled.reproject_stage_positions_onto_image2(self.image, self.positions)
             else:
                 points = tiled.reproject_stage_positions_onto_image(self.image, self.positions)
 
