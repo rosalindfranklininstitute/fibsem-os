@@ -141,7 +141,7 @@ class TrenchBitmapPattern(BasePattern[FibsemBitmapSettings]):
 
     name: ClassVar[str] = "TrenchBitmap"
 
-    def define(self) -> list[FibsemBitmapSettings]:
+    def define(self) -> List[FibsemBitmapSettings]:
         path: Optional[str] = self.path.strip()
         if not path:
             path = None
