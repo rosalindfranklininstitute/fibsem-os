@@ -173,7 +173,7 @@ def fromTescanImage(image: 'Document', image_settings: ImageSettings = None) -> 
 
     return FibsemImage(data=image_data, metadata=md)
 
-def _to_tescan_image_roi(rect: FibsemRectangle, image_shape: Tuple[int, int]) -> Tuple[int, int, int, int]:
+def to_tescan_image_roi(rect: FibsemRectangle, image_shape: Tuple[int, int]) -> Tuple[int, int, int, int]:
     """Convert a FibsemRectangle to a Tescan image ROI (left, top, right, bottom)."""
     image_width, image_height = image_shape
     left = int(rect.left * image_width)
@@ -256,13 +256,12 @@ class TescanMicroscope(FibsemMicroscope):
     def __init__(self, system_settings: SystemSettings):
         if not TESCAN_API_AVAILABLE:
             raise ImportError("The TESCAN Automation API is not available. Please see the user guide for installation instructions.")
-        
+
         # create microscope client
         self.connection: Automation 
 
         # initialise system settings
         self.system: SystemSettings = system_settings
-
         self.milling_channel: BeamType = BeamType.ION
         self.stage_is_compustage: bool = False # TODO: remove requirement for this
 
@@ -272,8 +271,8 @@ class TescanMicroscope(FibsemMicroscope):
         self.experiment = FibsemExperiment()
 
         # initialise last images
-        self.last_image_eb: FibsemImage = None
-        self.last_image_ib: FibsemImage = None
+        self.last_image_eb: Optional[FibsemImage] = None
+        self.last_image_ib: Optional[FibsemImage] = None
 
         # cached beam parameters
         # NOTE: not all parameters are available via the api, so we cache them after acquiring image
@@ -287,7 +286,7 @@ class TescanMicroscope(FibsemMicroscope):
 
         # logging
         logging.debug({"msg": "create_microscope_client", "system_settings": system_settings.to_dict()})
-    
+
     def disconnect(self) -> None:
         self.connection.Disconnect()
         del self.connection
@@ -310,15 +309,19 @@ class TescanMicroscope(FibsemMicroscope):
 
         # TODO: use what the user specified in the configuration file
         # set up detectors
-        self.set("detector_type", self._default_detector_names[BeamType.ELECTRON], BeamType.ELECTRON)
-        self.set("detector_type", self._default_detector_names[BeamType.ION], BeamType.ION) 
-        image = self.connection.SEM.Scan.AcquireImageFromChannel(0, 1, 1, 100) # TODO: find a better way to get system info
+        available_detectors = self._get_available_detectors(BeamType.ELECTRON)
+        if self._default_detector_names[BeamType.ELECTRON] not in available_detectors:
+            self._default_detector_names[BeamType.ELECTRON] = "SE"
+
+        self.set_detector_type(self._default_detector_names[BeamType.ELECTRON], BeamType.ELECTRON)
+        self.set_detector_type(self._default_detector_names[BeamType.ION], BeamType.ION)
+        # image = self.connection.SEM.Scan.AcquireImageFromChannel(0, 1, 1, 100) # TODO: find a better way to get system info
 
         # system info
         self.system.info.manufacturer = "TESCAN"
-        self.system.info.model = image.Header["MAIN"]["DeviceModel"]
-        self.system.info.serial_number = image.Header["MAIN"]["SerialNumber"]
-        self.system.info.software_version = image.Header["MAIN"]["SoftwareVersion"]
+        # self.system.info.model = image.Header["MAIN"]["DeviceModel"]
+        # self.system.info.serial_number = image.Header["MAIN"]["SerialNumber"]
+        # self.system.info.software_version = image.Header["MAIN"]["SoftwareVersion"]
 
         info = self.system.info
         logging.info(f"Microscope client connected to model {info.model} with serial number {info.serial_number} and software version {info.software_version}.")
@@ -358,16 +361,16 @@ class TescanMicroscope(FibsemMicroscope):
         # Validate parameters - at least one must be provided
         if image_settings is None and beam_type is None:
             raise ValueError("Must provide either image_settings (to acquire with specific settings) or beam_type (to acquire with current microscope settings for that beam type).")
-        
+
         # Determine which beam type and settings to use (image_settings takes precedence)
-        if image_settings is not None:
+        elif image_settings is not None:
             # Use provided image settings
             effective_beam_type = image_settings.beam_type
             effective_image_settings = image_settings
-        else:
+        elif beam_type is not None:
             # Use current settings for the specified beam type
             effective_beam_type = beam_type
-            effective_image_settings = self.get_imaging_settings(beam_type=beam_type)
+            effective_image_settings = self.get_imaging_settings(beam_type=effective_beam_type)
 
         logging.info(f"acquiring new {effective_beam_type.name} image.")
 
@@ -384,11 +387,11 @@ class TescanMicroscope(FibsemMicroscope):
             hfw = self.get_field_of_view(beam_type=effective_beam_type)  # update hfw if required
             if not np.isclose(hfw, effective_image_settings.hfw, atol=1e-6):
                 self.set_field_of_view(effective_image_settings.hfw, effective_beam_type)
-        
+
         image_roi = effective_image_settings.reduced_area   
 
         if image_roi is not None:
-            left, top, right, bottom = _to_tescan_image_roi(
+            left, top, right, bottom = to_tescan_image_roi(
                 rect=image_roi, 
                 image_shape=(image_width, image_height)
             )
@@ -530,12 +533,14 @@ class TescanMicroscope(FibsemMicroscope):
         # dy, dz = point_yz.y, point_yz.z
 
         # calculate the corrected move to reach that point from base-state?
-        _new_position = deepcopy(base_position)
-        _new_position.x += dx
-        _new_position.y += dy
-        # _new_position.z += dz
+        new_position = deepcopy(base_position)
+        if new_position.x is not None:
+            new_position.x += dx
+        if new_position.y is not None:
+            new_position.y += dy
+        # new_position.z += dz
 
-        return _new_position # TODO: implement
+        return new_position # TODO: implement
 
     def move_stage_absolute(self, position: FibsemStagePosition):
         """
@@ -641,38 +646,10 @@ class TescanMicroscope(FibsemMicroscope):
         z_move = FibsemStagePosition(x=dx, y=0, z=dy, r=0, t=0)
         self.move_stage_relative(z_move)
 
-    # # TODO: update this to an enum
+    # TODO: make this generic?
     def get_stage_orientation(self, stage_position: Optional[FibsemStagePosition] = None) -> str:
-        # TODO: consolidate this as it is generic
-
-        # current stage position
-        if stage_position is None:
-            stage_position = self.get_stage_position()
-        stage_rotation = stage_position.r % (2 * np.pi)
-        stage_tilt = stage_position.t
-
-        from fibsem import movement
-        # TODO: also check xyz ranges?
-
-        sem = self.get_orientation("SEM")
-        fib = self.get_orientation("FIB")
-        milling = self.get_orientation("MILLING")
-
-        is_sem_rotation = movement.rotation_angle_is_smaller(stage_rotation, sem.r, atol=5) # query: do we need rotation_angle_is_smaller, since we % 2pi the rotation?
-        is_fib_rotation = movement.rotation_angle_is_smaller(stage_rotation, fib.r, atol=5)
-
-        is_sem_tilt = np.isclose(stage_tilt, sem.t, atol=0.1)
-        is_fib_tilt = np.isclose(stage_tilt, fib.t, atol=0.1)
-        is_milling_tilt = np.isclose(stage_tilt, milling.t, atol=np.radians(5))
-
-        if is_sem_rotation and is_sem_tilt:
-            return "SEM"
-        if is_sem_rotation and is_milling_tilt:
-            return "MILLING"
-        if is_fib_rotation and is_fib_tilt:
-            return "FIB"
-
-        return "UNKNOWN"
+        from fibsem.microscope import ThermoMicroscope
+        return ThermoMicroscope.get_stage_orientation(self, stage_position) # type: ignore
 
     def _y_corrected_stage_movement(
         self,
@@ -773,8 +750,6 @@ class TescanMicroscope(FibsemMicroscope):
 
         return FibsemManipulatorPosition(x=x, y=y, z=z, r=r)
 
-
-
     def insert_manipulator(self, name: str = "Standby"):
         preset_positions = ["Parking","Standby","Working",]
 
@@ -784,11 +759,9 @@ class TescanMicroscope(FibsemMicroscope):
         for position in preset_positions:
             if name.lower() == position.lower():
                 name = position
-    
 
         if name not in preset_positions:
             raise ValueError(f"Position {name} is not a valid preset position. Valid positions are {preset_positions}.")
-
 
         insert_position = getattr(self.connection.Nanomanipulator.Position,name)
 
@@ -813,24 +786,15 @@ class TescanMicroscope(FibsemMicroscope):
         assert y >= ymin and y <= ymax, f"Y position {y} is outside of manipulator limits {ymin} to {ymax}"
         assert z >= zmin and z <= zmax, f"Z position {z} is outside of manipulator limits {zmin} to {zmax}"
         assert r >= rmin and r <= rmax, f"R position {r} is outside of manipulator limits {rmin} to {rmax}"
-    
+
     def retract_manipulator(self):
         retract_position = getattr(self.connection.Nanomanipulator.Position,"Parking")
         index = 0
         self.connection.Nanomanipulator.MoveToPosition(Index=index,Position=retract_position)
-        
-
     
     def move_manipulator_relative(self,position: FibsemManipulatorPosition, name: str = None):
-        if not np.isclose(position.r, 0.0):
-            rotation = True
-        else:
-            rotation = False
-        if not np.isclose(position.t, 0.0):
-            tilt = True
-        else:
-            tilt = False
-        if self.connection.Nanomanipulator.IsCalibrated(0) == False:
+
+        if self.connection.Nanomanipulator.IsCalibrated(0) is False:
             logging.info("Calibrating manipulator")
             self.connection.Nanomanipulator.Calibrate(0)
 
@@ -853,15 +817,8 @@ class TescanMicroscope(FibsemMicroscope):
 
     
     def move_manipulator_absolute(self, position: FibsemManipulatorPosition, name: str = None):
-        if not np.isclose(position.r, 0.0):
-            rotation = True
-        else:
-            rotation = False
-        if not np.isclose(position.t, 0.0):
-            tilt = True
-        else:
-            tilt = False
-        if self.connection.Nanomanipulator.IsCalibrated(0) == False:
+
+        if self.connection.Nanomanipulator.IsCalibrated(0) is False:
             logging.info("Calibrating manipulator")
             self.connection.Nanomanipulator.Calibrate(0)
         
@@ -1409,11 +1366,11 @@ class TescanMicroscope(FibsemMicroscope):
             detectors = self.connection.FIB.Detector.Enum()
         return detectors
 
-    def _get_detector(self, detector_type: Union['Detector', str], beam_type: BeamType) -> str:
+    def _get_detector(self, detector_type: Union['Detector', str], beam_type: BeamType) -> Optional[str]:
         """Get the detector object for the given detector type and beam type."""
         if isinstance(detector_type, Detector):
             detector_type = detector_type.name
-        
+
         available_detectors = self._get_available_detectors(beam_type)
         detector: Detector
         for detector in available_detectors:
@@ -1422,7 +1379,7 @@ class TescanMicroscope(FibsemMicroscope):
                 return detector
         return None
 
-    def get_available_values(self, key: str, beam_type: BeamType = None)-> List[Union[str, float]]:
+    def get_available_values(self, key: str, beam_type: Optional[BeamType] = None)-> List[Union[str, float]]:
         """Get a list of available values for a given key.
         Keys: plasma_gas, current, detector_type
         """
@@ -1437,19 +1394,22 @@ class TescanMicroscope(FibsemMicroscope):
         if key == "detector_type":
             detectors = self._get_available_detectors(beam_type=beam_type)
             values = [detector.name for detector in detectors]
-        
-        if key == "detector_mode": 
-            values = None  # TODO: this should be empty list?
 
         if key == "presets":
-            return self._get_presets(beam_type=beam_type)
+            values = self._get_presets(beam_type=beam_type)
 
         if key == "scan_direction":
             values = ["ZigZag", "Flyback", "RLE", "SpiralInsideOut", "SpiralOutsideIn"]
-            
+
         return values
-   
-    def _get(self, key: str, beam_type: BeamType = None) -> Union[float, str, None]:
+
+    def _get(self, key: str, beam_type: Optional[BeamType] = None) -> Union[float,
+                                                                  str,
+                                                                  List[str],
+                                                                  Tuple[int, int],
+                                                                  Point,
+                                                                  FibsemStagePosition, 
+                                                                  None]:
         """Get a property of the microscope."""
         if beam_type is not None:
             beam: Union[Automation.SEM, Automation.FIB] = self._get_beam(beam_type)
@@ -1518,7 +1478,7 @@ class TescanMicroscope(FibsemMicroscope):
             if self.system.stage.enabled is False:
                 raise ValueError("Stage is not enabled.")
             position = self.connection.Stage.GetPosition()
-            return FibsemStagePosition.from_tescan_stage_position(position)
+            return from_tescan_stage_position(position)
 
         if key == "stage_calibrated":
             return self.connection.Stage.IsCalibrated()
@@ -1537,9 +1497,7 @@ class TescanMicroscope(FibsemMicroscope):
             return detector.name
 
         if key in ["detector_contrast", "detector_brightness"]:
-            contrast, brightness = beam.Detector.GetGainBlack(
-                Detector=self._active_detector[beam_type]
-            )
+            contrast, brightness = beam.Detector.GetGainBlack(Detector=self._active_detector[beam_type])
 
             if key == "detector_contrast":
                 return contrast / 100
