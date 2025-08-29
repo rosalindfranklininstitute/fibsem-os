@@ -1058,7 +1058,7 @@ class FibsemMicroscope(ABC):
             pretilt=np.radians(self.system.stage.shuttle_pre_tilt), 
             column_tilt=np.radians(self.system.ion.column_tilt)
         )
-        return np.degrees(milling_angle)
+        return float(np.degrees(milling_angle))
 
     def is_close_to_milling_angle(self, milling_angle: float, atol: float = 2.0) -> bool:
         """Check if the current milling angle is close to the specified milling angle.

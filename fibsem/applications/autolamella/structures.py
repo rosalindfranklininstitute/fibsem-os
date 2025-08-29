@@ -383,15 +383,16 @@ class Lamella:
     failure_note: str = ""                                                  # TODO: deprecate, use DefectState instead
     failure_timestamp: float = None                                         # TODO: deprecate, use DefectState instead
     alignment_area: FibsemRectangle = field(default_factory=FibsemRectangle)
-    history: List[LamellaState] = None                                      # TODO: deprecate, use task_history instead
-    milling_workflows: Dict[str, List[FibsemMillingStage]] = None           # TODO: deprecate, use task_config instead
-    states: Dict[AutoLamellaStage, LamellaState] = None                     # TODO: deprecate, use task_history instead
+    history: List[LamellaState] = field(default_factory=list)                                      # TODO: deprecate, use task_history instead
+    milling_workflows: Dict[str, List[FibsemMillingStage]] = field(default_factory=dict)           # TODO: deprecate, use task_config instead
+    states: Dict[AutoLamellaStage, LamellaState] = field(default_factory=dict)                     # TODO: deprecate, use task_history instead
     _id: str = str(uuid.uuid4())
     task_config: Dict[str, 'AutoLamellaTaskConfig'] = field(default_factory=dict)
     poses: Dict[str, MicroscopeState] = field(default_factory=dict)
     task: AutoLamellaTaskState = field(default_factory=AutoLamellaTaskState)
     task_history: List['AutoLamellaTaskState'] = field(default_factory=list)
     defect: DefectState = field(default_factory=DefectState)
+    milling_angle: Optional[float] = None
 
     def __post_init__(self):
         # only make the dir, if the base path is actually set, 
@@ -523,6 +524,7 @@ class Lamella:
             "task": self.task.to_dict() if self.task is not None else None,
             "task_history": [task.to_dict() for task in self.task_history],
             "defect": self.defect.to_dict() if self.defect is not None else None,
+            "milling_angle": self.milling_angle,
         }
 
     @property
@@ -591,6 +593,7 @@ class Lamella:
             task=AutoLamellaTaskState.from_dict(data.get("task", {})),
             task_history=[AutoLamellaTaskState.from_dict(task) for task in data.get("task_history", [])],
             defect=DefectState.from_dict(data.get("defect", {})),
+            milling_angle=data.get("milling_angle", None),
         )
 
     def load_reference_image(self, fname) -> FibsemImage:
@@ -938,6 +941,7 @@ class Experiment:
                 "Name": p.name,
                 "Status": status_msg,
                 "Last Completed": last_label,
+                "Milling Angle": round(p.milling_angle, 2) if p.milling_angle is not None else None,
             }
 
             dat.append(deepcopy(d))

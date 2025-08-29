@@ -634,6 +634,8 @@ def setup_lamella(
     image_settings.reduced_area = None
     image_settings.autocontrast = True
 
+    # store milling angle
+    lamella.milling_angle = microscope.get_current_milling_angle()
 
     log_status_message(lamella, "REFERENCE_IMAGES")
     update_status_ui(parent_ui, f"{lamella.info} Acquiring Reference Images...")
