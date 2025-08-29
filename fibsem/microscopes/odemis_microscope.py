@@ -805,6 +805,10 @@ class OdemisMicroscope(FibsemMicroscope):
         """Move the stage vertically by the specified amount."""
         return ThermoMicroscope.vertical_move(self, dy=dy, dx=dx, static_wd=static_wd)
 
+    def move_coincident_from_sem(self, dx: float, dy: float) -> FibsemStagePosition:
+        """Correct coincident point from SEM to FIB stage position."""
+        return ThermoMicroscope.move_coincident_from_sem(self, dx=dx, dy=dy)
+
     def _y_corrected_stage_movement(
         self, expected_y: float, beam_type: BeamType
     ) -> FibsemStagePosition:
