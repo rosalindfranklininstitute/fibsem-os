@@ -233,6 +233,14 @@ def plot_lamella_summary(p: Lamella,
             ax = axes[i]
 
         stage_name = s.name
+
+        # Set y-axis label for this row (only on the leftmost subplot)
+        ax[0].set_ylabel(stage_name, fontsize=18, rotation=90, ha='center', va='center')
+
+        # Set x-axis label on the first row (only on the leftmost subplot)
+        if i == 0:
+            ax[0].set_xlabel(p.name, fontsize=18, ha='center', va='center')
+            ax[0].xaxis.set_label_position('top')
         filenames = sorted(glob.glob(os.path.join(p.path, f"ref_{stage_name}*_final_*_res*.tif*")))
 
         # for backwards compatibility
@@ -260,7 +268,10 @@ def plot_lamella_summary(p: Lamella,
                 arr = np.asarray(PILImage.fromarray(img.data).resize(resize_shape[::-1]))
 
                 ax[j].imshow(arr, cmap="gray")
-                ax[j].axis("off")
+                ax[j].set_xticks([])
+                ax[j].set_yticks([])
+                for spine in ax[j].spines.values():
+                    spine.set_visible(False)
 
                 # add scalebar
                 from matplotlib_scalebar.scalebar import ScaleBar
@@ -273,17 +284,6 @@ def plot_lamella_summary(p: Lamella,
                 )
                 ax[j].add_artist(scalebar)
 
-                if j == 0:
-                    # add the stage_name to the bottom left corner
-                    ax[j].text(0.01, 0.01, stage_name, 
-                               fontsize=24, color="lime", 
-                               transform=ax[j].transAxes)
-
-                    if i == 0:
-                        # add the lamella name to the top left corner
-                        ax[j].text(0.01, 0.85, p.name, 
-                                   fontsize=36, color="cyan", alpha=0.9, 
-                                transform=ax[j].transAxes)
         except Exception as e:
             logging.error(f"Error plotting {p.name} - {s.name}: {e}")
             continue
@@ -519,6 +519,23 @@ def generate_report(experiment: Experiment,
     pdf.add_paragraph('This report summarises the results of the AutoLamella experiment.')
     pdf.add_dataframe(report_data["experiment_summary_dataframe"], 'Experiment Summary')
 
+    # overview
+    try:
+        pdf.add_page_break()
+        pdf.add_heading("Overview (Positions)")
+        filenames = glob.glob(os.path.join(experiment.path, "*overview*.tif"))
+        filenames = [f for f in filenames if "autogamma" not in f]
+        for filename in filenames:
+
+            image = FibsemImage.load(filename)
+            overview_filename = filename.replace(".tif", ".png")
+            fig = save_final_overview_image(exp=experiment, 
+                                            image=image, 
+                                            output_path=overview_filename)
+            pdf.story.append(Image(overview_filename, width=4.5*inch, height=4.5*inch))
+    except Exception as e:
+        logging.debug(f"Error generating overview image: {e}")
+
     # timeline
     pdf.add_page_break()
     pdf.add_plotly_figure(report_data["workflow_timeline_plot"], "Workflow Timeline")
@@ -543,7 +560,6 @@ def generate_report(experiment: Experiment,
     # if "Waffle" in experiment.name:
         # method = AutoLamellaMethod.WAFFLE
 
-    os.makedirs("tmp", exist_ok=True)
     df_history = experiment.history_dataframe()
 
     for p in experiment.positions:
@@ -561,8 +577,10 @@ def generate_report(experiment: Experiment,
         fig = plot_lamella_summary(p, method=experiment.method)
         if fig is None:
             continue
+
+        os.makedirs(os.path.join(p.path,'tmp'), exist_ok=True)
         # save figure to temp file
-        fname = f'tmp/tmp-{p.name}.png'
+        fname = os.path.join(p.path,'tmp', f'tmp-{p.name}.png')
         fig.savefig(fname, format='png', bbox_inches='tight', dpi=300)
         plt.close()
         pdf.story.append(Image(fname, width=6*inch, height=4*inch))
@@ -572,11 +590,10 @@ def generate_report(experiment: Experiment,
         if fig is None:
             continue
         # save figure to temp file
-        fname = f'tmp/tmp-milling-{p.name}.png'
+        fname = os.path.join(p.path,'tmp', f'tmp-milling-{p.name}.png')
         fig.savefig(fname, format='png', bbox_inches='tight', dpi=300)
         plt.close()
         pdf.story.append(Image(fname, width=6*inch, height=4*inch))
-
 
     # Generate PDF
     pdf.generate()
@@ -601,7 +618,9 @@ def generate_final_overview_image(exp: Experiment,
         pos.name = p.name
         sem_positions.append(pos)
 
-    fig = plot_stage_positions_on_image(image, sem_positions, show=False)
+    fig = plot_stage_positions_on_image(image, sem_positions,
+                                        show=False,
+                                        show_scalebar=True)
 
     # plot details
     fig.suptitle(f"Experiment: {exp.name}")

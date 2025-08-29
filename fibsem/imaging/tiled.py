@@ -406,7 +406,8 @@ def plot_stage_positions_on_image(
         positions: List[FibsemStagePosition],
         show: bool = False,
         bound: bool = True,
-        color: Optional[str] = None) -> Figure:
+        color: Optional[str] = None,
+        show_scalebar: bool = False) -> Figure:
     """Plot stage positions reprojected on an image as matplotlib figure. Assumes image is flat to beam.
     Args:
         image: The image.
@@ -438,6 +439,22 @@ def plot_stage_positions_on_image(
         plt.plot(pt.x, pt.y, ms=20, c=c, marker="+", markeredgewidth=2, label=f"{pt.name}")
         # draw position name next to point
         plt.text(pt.x-225, pt.y-50, pt.name, fontsize=14, color=c, alpha=0.75)
+
+
+    if show_scalebar:
+        try:
+            # add scalebar
+            from matplotlib_scalebar.scalebar import ScaleBar
+            scalebar = ScaleBar(
+                dx=image.metadata.pixel_size.x * image.data.shape[1],
+                color="black",
+                box_color="white",
+                box_alpha=0.5,
+                location="lower right",
+            )
+            plt.gca().add_artist(scalebar)
+        except Exception as e:
+            logging.debug(f"Could not add scalebar: {e}")
 
     plt.axis("off")
     if show:
