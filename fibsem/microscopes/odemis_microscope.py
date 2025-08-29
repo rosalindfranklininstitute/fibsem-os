@@ -222,7 +222,7 @@ class OdemisMicroscope(FibsemMicroscope):
     milling_progress_signal = Signal(dict)
     _last_imaging_settings: ImageSettings
 
-    def __init__(self, system_settings: SystemSettings = None):
+    def __init__(self, system_settings: SystemSettings):
         self.system: SystemSettings = system_settings
 
         self.connection: OdemisAutoscriptClient = model.getComponent(role="fibsem")

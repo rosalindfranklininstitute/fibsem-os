@@ -1183,7 +1183,7 @@ class ThermoMicroscope(FibsemMicroscope):
             Calculate the y corrected stage movement, corrected for the additional tilt of the sample holder (pre-tilt angle).
     """
 
-    def __init__(self, system_settings: Optional[SystemSettings] = None):
+    def __init__(self, system_settings: SystemSettings):
         if not THERMO_API_AVAILABLE:
             raise Exception("Autoscript (ThermoFisher) not installed. Please see the user guide for installation instructions.")            
 
@@ -1204,14 +1204,18 @@ class ThermoMicroscope(FibsemMicroscope):
 
     def reconnect(self):
         """Attempt to reconnect to the microscope client."""
-        if not hasattr(self, "system"):
-            raise Exception("Please connect to the microscope first")
+        if self.connection is None:
+            raise ConnectionError("Please connect to the microscope first")
 
         self.disconnect()
         self.connect_to_microscope(self.system.info.ip_address)
 
     def disconnect(self):
         """Disconnect from the microscope client."""
+        if self.connection is None:
+            logging.warning("Microscope client is not connected.")
+            return
+
         self.connection.disconnect()
         del self.connection
         self.connection = None
