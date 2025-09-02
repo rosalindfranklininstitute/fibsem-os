@@ -1,6 +1,6 @@
 
 from pathlib import Path
-from typing import Tuple, List, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 from PyQt5 import QtGui, QtWidgets
@@ -8,11 +8,13 @@ from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
     QLabel,
     QMessageBox,
+    QPushButton,
     QWidget,
 )
 
 from fibsem import config as cfg
 from fibsem.microscope import FibsemMicroscope
+
 
 def set_arr_as_qlabel(
     arr: np.ndarray,
@@ -49,6 +51,58 @@ def message_box_ui(title: str,
 
     return response
 
+def message_box_ui_with_custom_buttons(
+    message, 
+    title="Message", 
+    yes_text="Yes",
+    no_text="No",
+    icon=QMessageBox.Question, 
+    parent=None
+):
+    """
+    Create a custom QMessageBox dialog with two custom buttons.
+    
+    Args:
+        message: Dialog message text
+        title: Dialog title (default: "Message")
+        yes_text: Text for the Yes button (default: "Yes")
+        no_text: Text for the No button (default: "No")
+        icon: QMessageBox icon (default: QMessageBox.Question)
+        parent: Parent widget
+        
+    Returns:
+        bool or None: True if Yes button is clicked, 
+                     False if No button is clicked,
+                     None if dialog is closed
+    """
+    msg_box = QMessageBox(parent)
+    msg_box.setWindowTitle(title)
+    msg_box.setText(message)
+    msg_box.setIcon(icon)
+    
+    # Create custom buttons
+    yes_button = QPushButton(yes_text)
+    no_button = QPushButton(no_text)
+    
+    # Add buttons to message box
+    msg_box.addButton(yes_button, QMessageBox.YesRole)
+    msg_box.addButton(no_button, QMessageBox.NoRole)
+    
+    # Set yes button as default
+    msg_box.setDefaultButton(yes_button)
+    
+    # Show dialog and get result
+    msg_box.exec_()
+    clicked_button = msg_box.clickedButton()
+    
+    # Return boolean based on which button was clicked
+    if clicked_button == yes_button:
+        return True
+    elif clicked_button == no_button:
+        return False
+    else:
+        # Dialog was closed (X button or Escape)
+        return None
 
 def _display_logo(path, label, shape=[50, 50]):
     label.setScaledContents(True)
@@ -88,18 +142,17 @@ def create_combobox_message_box(text: str, title: str, options: list, parent = N
 # TODO: add filters for file types
 
 def open_existing_directory_dialog(
-    msg: str = "Select a directory", path: Path = cfg.LOG_PATH, parent=None
-) -> Path:
+    msg: str = "Select a directory", path: str = cfg.LOG_PATH, parent=None
+) -> str:
     path = QtWidgets.QFileDialog.getExistingDirectory(parent=parent, caption=msg, directory=path)
     return path
 
-
 def open_existing_file_dialog(
     msg: str = "Select a file",
-    path: Path = cfg.LOG_PATH,
+    path: str = cfg.LOG_PATH,
     _filter: str = "*yaml",
-    parent=None,
-) -> Path:
+    parent: Optional[QWidget] = None,
+) -> str:
     path, _ = QtWidgets.QFileDialog.getOpenFileName(
         parent=parent, 
         caption=msg, 
@@ -108,13 +161,12 @@ def open_existing_file_dialog(
     )
     return path
 
-
 def open_save_file_dialog(
     msg: str = "Select a file",
-    path: Path = cfg.LOG_PATH,
+    path: str = cfg.LOG_PATH,
     _filter: str = "*yaml",
-    parent=None,
-) -> Path:
+    parent: Optional[QWidget] = None,
+) -> str:
     path, _ = QtWidgets.QFileDialog.getSaveFileName(
         parent=parent,
         caption=msg,
@@ -128,7 +180,7 @@ def open_text_input_dialog(
     title: str = "Text Entry",
     default: str = "UserText",
     parent=None,
-) -> Tuple[str, bool]:
+) -> Tuple[str, Optional[bool]]:
     text, okPressed = QtWidgets.QInputDialog.getText(
         parent,
         title,
@@ -138,23 +190,17 @@ def open_text_input_dialog(
     )
     return text, okPressed
 
-def open_information_dialog(microscope: FibsemMicroscope, parent=None):
+def open_information_dialog(microscope: FibsemMicroscope, parent: Optional[QWidget] = None):
     import fibsem
     
     fibsem_version = fibsem.__version__
-    autolamella_version = "Not Installed"
-    try:
-        import autolamella
-        autolamella_version = autolamella.__version__
-    except ImportError:
-        pass
     from fibsem.structures import SystemInfo
     info: SystemInfo = microscope.system.info
 
     text = f"""
     OpenFIBSEM Information:
     OpenFIBSEM: {fibsem_version}
-    AutoLamella: {autolamella_version}
+    AutoLamella: {fibsem_version}
 
     Microscope Information:
     Name: {info.name}
@@ -176,8 +222,7 @@ def open_information_dialog(microscope: FibsemMicroscope, parent=None):
     msg.exec_()
 
 
-import numpy as np
-import matplotlib.pyplot as plt
+
 
 def create_nested_squares(array_size: int = 1000, 
                           orange_size: int = 800, 

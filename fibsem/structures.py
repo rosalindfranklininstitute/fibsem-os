@@ -4,7 +4,7 @@ import json
 import os
 import sys
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, fields, asdict
+from dataclasses import dataclass, field, fields, asdict, InitVar
 from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
@@ -12,6 +12,7 @@ from typing import List, Optional, Tuple, Union, Set, Any, Dict, Type, TypeVar
 
 import numpy as np
 import tifffile as tff
+from numpy.typing import NDArray
 
 import fibsem
 from fibsem.config import METADATA_VERSION, SUPPORTED_COORDINATE_SYSTEMS
@@ -289,7 +290,7 @@ class FibsemStagePosition:
                 (abs(self.z - pos2.z) < tol) and 
                 (abs(self.t - pos2.t) < tol) and 
                 (abs(self.r - pos2.r) < tol))
-   
+
     def is_close2(self, pos2: 'FibsemStagePosition', tol: float = 1e-6, axes: Optional[List[str]] = None) -> bool:
         """Check if two positions are close to each other."""
         VALID_AXES = ['x', 'y', 'z', 't', 'r']
@@ -509,6 +510,32 @@ class FibsemRectangle:
     def is_valid_reduced_area(self) -> bool:
         return _is_valid_reduced_area(self)
 
+    @property
+    def pretty_string(self) -> str:
+        """Returns a pretty string representation of the rectangle."""
+        return f"Left: {self.left:.2f}, Top: {self.top:.2f}, Width: {self.width:.2f}, Height: {self.height:.2f}"
+
+    def to_pixel_coordinates(self, image_shape: Tuple[int, int]) -> Tuple[int, int, int, int]:
+        """Convert FibsemRectangle (normalized coordinates 0-1) to image pixel coordinates.
+        
+        Args:
+            image_shape: (height, width) tuple of the image shape
+            
+        Returns:
+            Tuple of (x, y, width, height) in pixel coordinates where:
+            - x, y are the top-left corner pixel coordinates
+            - width, height are the dimensions in pixels
+        """
+        height, width = image_shape
+        
+        # Convert normalized coordinates to pixel coordinates
+        x = int(self.left * width)
+        y = int(self.top * height)
+        pixel_width = int(self.width * width)
+        pixel_height = int(self.height * height)
+        
+        return (x, y, pixel_width, pixel_height)
+
 def _is_valid_reduced_area(reduced_area: FibsemRectangle) -> bool:
     """Check whether the reduced area is valid. 
     Left and top must be between 0 and 1, and width and height must be between 0 and 1.
@@ -629,7 +656,7 @@ class ImageSettings:
     def to_dict(self) -> dict:
         settings_dict = {
             "beam_type": self.beam_type.name if self.beam_type is not None else None,
-            "resolution": self.resolution if self.resolution is not None else None,
+            "resolution": list(self.resolution) if self.resolution is not None else None,
             "dwell_time": self.dwell_time if self.dwell_time is not None else None,
             "hfw": self.hfw if self.hfw is not None else None,
             "autocontrast": self.autocontrast
@@ -672,7 +699,8 @@ class ImageSettings:
         from fibsem import utils
 
         image_settings = deepcopy(image.metadata.image_settings)
-        image_settings.filename = utils.current_timestamp()
+        if image_settings.filename is None:
+            image_settings.filename = utils.current_timestamp()
         image_settings.save = True
 
         return image_settings
@@ -789,7 +817,7 @@ class BeamSettings:
             "beam_current": self.beam_current,
             "voltage": self.voltage,
             "hfw": self.hfw,
-            "resolution": self.resolution,
+            "resolution": list(self.resolution) if self.resolution is not None else None,
             "dwell_time": self.dwell_time,
             "stigmation": self.stigmation.to_dict()
             if self.stigmation is not None
@@ -1052,20 +1080,53 @@ class FibsemCircleSettings(FibsemPatternSettings):
     def volume(self) -> float:
         return np.pi * self.radius**2 * self.depth
 
+
 @dataclass
 class FibsemBitmapSettings(FibsemPatternSettings):
     width: float
     height: float
     depth: float
-    rotation: float
     centre_x: float
     centre_y: float
-    path: str = None
+    rotation: float = 0
+    scan_direction: str = "TopToBottom"
+    passes: int = 0
+    time: float = 0.0
+    is_exclusion: bool = False
+    flip_y: bool = False
+    path: InitVar[Optional[Union[str, os.PathLike]]] = None
+    array: InitVar[Optional[NDArray[Any]]] = None
+    bitmap: Optional[NDArray[Any]] = field(init=False)
+
+    def __post_init__(
+        self, path: Optional[Union[str, os.PathLike]], array: Optional[NDArray[Any]]
+    ) -> None:
+        if array is None:
+            if path is None:
+                # Fallback on empty array
+                array = None
+            else:
+                from PIL import Image
+
+                array = np.asarray(Image.open(path), dtype=np.uint8)
+
+        if array is not None:
+            if array.dtype == np.uint8:
+                # Convert bitmap image to bitmap points - simpler if it's handled here and consistent after
+                from fibsem.milling.patterning.utils import bitmap_image_to_points
+
+                array = bitmap_image_to_points(array)
+            else:
+                array = array.copy()
+
+        self.bitmap = array
 
     @property
     def volume(self) -> float:
-        # NOTE: this is a VERY rough estimate
-        return self.width * self.height * self.depth
+        if self.bitmap is None:
+            return 0
+        return self.width * self.height * self.depth * self.bitmap[:, :, 0].mean()
+
 
 @dataclass
 class FibsemMillingSettings:
@@ -1591,51 +1652,6 @@ class FibsemImageMetadata:
             system=system_settings
         )
         return metadata
-
-
-
-    def compare_image_settings(self, image_settings: ImageSettings) -> bool:
-        """Compares image settings to the metadata image settings.
-
-        Args:
-            image_settings (ImageSettings): Image settings to compare to.
-
-        Returns:
-            bool: True if the image settings match the metadata image settings.
-        """
-        assert (
-            self.image_settings.resolution[0] == image_settings.resolution[0]
-            and self.image_settings.resolution[1] == image_settings.resolution[1]
-        ), f"resolution: {self.image_settings.resolution} != {image_settings.resolution}"
-        assert (
-            self.image_settings.dwell_time == image_settings.dwell_time
-        ), f"dwell_time: {self.image_settings.dwell_time} != {image_settings.dwell_time}"
-        assert (
-            self.image_settings.hfw == image_settings.hfw
-        ), f"hfw: {self.image_settings.hfw} != {image_settings.hfw}"
-        assert (
-            self.image_settings.autocontrast == image_settings.autocontrast
-        ), f"autocontrast: {self.image_settings.autocontrast} != {image_settings.autocontrast}"
-        assert (
-            self.image_settings.beam_type.value == image_settings.beam_type.value
-        ), f"beam_type: {self.image_settings.beam_type.value} != {image_settings.beam_type.value}"
-        assert (
-            self.image_settings.autogamma == image_settings.autogamma
-        ), f"gamma: {self.image_settings.autogamma} != {image_settings.autogamma}"
-        assert (
-            self.image_settings.save == image_settings.save
-        ), f"save: {self.image_settings.save} != {image_settings.save}"
-        assert (
-            self.image_settings.path == image_settings.path
-        ), f"path: {self.image_settings.path} != {image_settings.path}"
-        assert (
-            self.image_settings.filename == image_settings.filename
-        ), f"filename: {self.image_settings.filename} != {image_settings.filename}"
-        assert (
-            self.image_settings.reduced_area == image_settings.reduced_area
-        ), f"reduced_area: {self.image_settings.reduced_area} != {image_settings.reduced_area}"
-
-        return True
 
 
 class FibsemImage:

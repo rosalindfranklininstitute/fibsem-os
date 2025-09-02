@@ -48,6 +48,7 @@ class FibsemImageSettingsWidget(ImageSettingsWidgetUI.Ui_Form, QtWidgets.QWidget
     viewer_update_signal = pyqtSignal()             # when the viewer is updated
     acquisition_progress_signal = pyqtSignal(dict)  # TODO: add progress indicator
     image_received = pyqtSignal(object)
+    alignment_area_updated = pyqtSignal(FibsemRectangle)
 
     def __init__(
         self,
@@ -175,7 +176,7 @@ class FibsemImageSettingsWidget(ImageSettingsWidgetUI.Ui_Form, QtWidgets.QWidget
 
         # feature flags
         self.pushButton_show_alignment_area.setVisible(False)
-        self.pushButton_show_alignment_area.clicked.connect(lambda: self.toggle_alignment_area(None))
+        # self.pushButton_show_alignment_area.clicked.connect(lambda: self.toggle_alignment_area(None))
 
         self.pushButton_take_image.setVisible(False)
         self.acquisition_buttons: List[QtWidgets.QPushButton] = [
@@ -857,22 +858,22 @@ class FibsemImageSettingsWidget(ImageSettingsWidgetUI.Ui_Form, QtWidgets.QWidget
         self.alignment_layer.visible = False
         self.restore_active_layer_for_movement()
 
-    def toggle_alignment_area(self, reduced_area: FibsemRectangle = None, editable: bool = True):
+    def toggle_alignment_area(self, reduced_area: FibsemRectangle, editable: bool = True):
         """Toggle the alignment area layer to selection mode, and display the alignment area."""
         if self.viewer.layers.selection.active == self.eb_layer:
-            logging.debug(f"Alignment area being set to: {reduced_area}")
             self.set_alignment_layer(reduced_area, editable=editable)
             self.alignment_layer.visible = True
         else:
             self.clear_alignment_area()
 
-    def set_alignment_layer(self, reduced_area: FibsemRectangle = FibsemRectangle(0.25, 0.25, 0.5, 0.5), 
+    def set_alignment_layer(self,
+                            reduced_area: FibsemRectangle = FibsemRectangle(0.25, 0.25, 0.5, 0.5),
                             editable: bool = True):
         """Set the alignment area layer in napari."""
 
         # add alignment area to napari
-        data = convert_reduced_area_to_napari_shape(reduced_area=reduced_area, 
-                                                    image_shape=self.ib_image.data.shape, 
+        data = convert_reduced_area_to_napari_shape(reduced_area=reduced_area,
+                                                    image_shape=self.ib_image.data.shape,
                                                    )
         if self.alignment_layer is None:
             self.alignment_layer = self.viewer.add_shapes(data=data, 
@@ -882,61 +883,47 @@ class FibsemImageSettingsWidget(ImageSettingsWidgetUI.Ui_Form, QtWidgets.QWidget
                         edge_width=ALIGNMENT_LAYER_PROPERTIES["edge_width"], 
                         face_color=ALIGNMENT_LAYER_PROPERTIES["face_color"], 
                         opacity=ALIGNMENT_LAYER_PROPERTIES["opacity"], 
-                        translate=self.ib_layer.translate) # match the ib layer translation
+                        translate=self.ib_layer.translate) # match the fib layer translation
             self.alignment_layer.metadata = ALIGNMENT_LAYER_PROPERTIES["metadata"]
+            self.alignment_layer.events.data.connect(self.update_alignment)
+            self.alignment_area_updated.connect(self._on_alignment_area_updated)
         else:
             self.alignment_layer.data = data
 
         if editable:
             self.viewer.layers.selection.active = self.alignment_layer
             self.alignment_layer.mode = "select"
-        # TODO: prevent rotation of rectangles?  
-        self.alignment_layer.events.data.connect(self.update_alignment)
+        # TODO: prevent rotation of rectangles?
 
     def update_alignment(self, event):
         """Validate the alignment area, and update the parent ui."""
         reduced_area = self.get_alignment_area()
-        is_valid = reduced_area.is_valid_reduced_area
+        if reduced_area is None:
+            return
+        self.alignment_area_updated.emit(reduced_area)
 
-        logging.info(f"Updated alignment area: {reduced_area}, valid: {is_valid}")
+    def _on_alignment_area_updated(self, reduced_area: FibsemRectangle):
+        """Update the parent ui with the new alignment area. (compatibility for AutoLamellaUI)
+        TODO: migrate to AutoLamellaUI once mono-repo is complete.
+        Args:
+            reduced_area (FibsemRectangle): The new alignment area.
+        """
+        if self.parent is None:
+            return
+        try:
+            is_valid = reduced_area.is_valid_reduced_area
+            msg = "Edit Alignment Area. Press Continue when done."
+            if not is_valid:
+                msg = "Invalid Alignment Area. Please adjust inside FIB Image."
+            self.parent.label_instructions.setText(msg)
+            self.parent.pushButton_yes.setEnabled(is_valid)
+        except Exception as e:
+            logging.info(f"Error updating alignment area: {e}")
 
-        # show valid/invalid message in parent # TODO: make this more generic
-        if self.parent.__class__.__name__ == "AutoLamellaUI":
-            logging.info("Parent is AutoLamellaUI")
-            try:
-                msg = "Edit Alignment Area. Press Continue when done." 
-                if not is_valid:
-                    msg = "Invalid Alignment Area. Please adjust inside FIB Image."
-                self.parent.label_instructions.setText(msg)
-                self.parent.pushButton_yes.setEnabled(is_valid)
-            except Exception as e:
-                logging.info(f"Error updating alignment area: {e}")
-
-        return reduced_area, is_valid
-
-    def get_alignment_area(self) -> FibsemRectangle:
+    def get_alignment_area(self) -> Optional[FibsemRectangle]:
         """Get the alignment area from the alignment layer."""
         data = self.alignment_layer.data
-        if data is None:
+        if data is None or len(data) == 0:
             return None
         data = data[0]
         return convert_shape_to_image_area(data, self.ib_image.data.shape)
-    
-
-def main():
-
-    image_settings = ImageSettings(resolution=[1536, 1024], dwell_time=1e-6, hfw=150e-6, 
-    autocontrast=True, beam_type=BeamType.ION, 
-    save=True, filename="my_label", path="path/to/save", 
-    autogamma=True)
-
-    viewer = napari.Viewer(ndisplay=2)
-    image_settings_ui = FibsemImageSettingsWidget(image_settings=image_settings)
-    viewer.window.add_dock_widget(
-        image_settings_ui, area="right", add_vertical_stretch=False
-    )
-    napari.run()
-
-
-if __name__ == "__main__":
-    main()

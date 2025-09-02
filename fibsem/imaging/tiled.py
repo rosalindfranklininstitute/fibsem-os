@@ -1,13 +1,14 @@
 
+import datetime
 import logging
 import os
 import time
-import datetime
 from copy import deepcopy
-from typing import List, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.figure import Figure
 
 from fibsem import acquire, conversions
 from fibsem.microscope import FibsemMicroscope
@@ -19,6 +20,9 @@ from fibsem.structures import (
     Point,
 )
 
+if TYPE_CHECKING:
+    from fibsem.ui.FibsemMinimapWidget import FibsemMinimapWidget
+
 POSITION_COLOURS = ["lime", "blue", "cyan", "magenta", "hotpink", "yellow", "orange", "red"]
 
 ##### TILED ACQUISITION
@@ -29,7 +33,7 @@ def tiled_image_acquisition(
     tile_size: float,
     overlap: float = 0.0,
     cryo: bool = True,
-    parent_ui=None,
+    parent_ui: Optional['FibsemMinimapWidget']=None,
 ) -> dict: 
     """Tiled image acquisition. Currently only supports square grids with no overlap.
     Args:
@@ -111,9 +115,9 @@ def tiled_image_acquisition(
 
             # stitch image
             arr[i*shape[0]:(i+1)*shape[0], j*shape[1]:(j+1)*shape[1]] = image.data
-            
+
             if parent_ui:
-                n_tiles_acquired+=1
+                n_tiles_acquired += 1
                 parent_ui.tile_acquisition_progress_signal.emit(
                     {
                         "msg": "Tile Collected",
@@ -144,7 +148,7 @@ def tiled_image_acquisition(
     return ddict
 
 # TODO: stitch while collecting
-def stitch_images(images: List[List[FibsemImage]], ddict: dict, parent_ui = None) -> FibsemImage:
+def stitch_images(images: List[List[FibsemImage]], ddict: dict, parent_ui: Optional['FibsemMinimapWidget'] = None) -> FibsemImage:
     """Stitch an array (2D) of images together. Assumes images are ordered in a grid with no overlap.
     Args:
         images: The images.
@@ -185,8 +189,8 @@ def tiled_image_acquisition_and_stitch(microscope: FibsemMicroscope,
                                   image_settings: ImageSettings, 
                                   grid_size: float, 
                                   tile_size: float, 
-                                  overlap: int = 0, cryo: bool = True, 
-                                  parent_ui = None) -> FibsemImage:
+                                  overlap: float = 0, cryo: bool = True, 
+                                  parent_ui: Optional['FibsemMinimapWidget'] = None) -> FibsemImage:
     """Acquire a tiled image and stitch it together. Currently only supports square grids with no overlap.
     Args:
         microscope: The microscope connection.
@@ -198,7 +202,7 @@ def tiled_image_acquisition_and_stitch(microscope: FibsemMicroscope,
         parent_ui: The parent UI for progress updates.
     Returns:
         The stitched image."""
-    
+
     # add datetime to filename for uniqueness
     filename = image_settings.filename
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -299,23 +303,124 @@ def reproject_stage_positions_onto_image(
     
     return points
 
-def plot_stage_positions_on_image(
-        image: FibsemImage, 
+def calculate_reprojected_stage_position2(image: FibsemImage, pos: FibsemStagePosition) -> Point:
+    """Calculate the reprojected stage position on an image.
+    Args:
+        image: The image.
+        pos: The stage position.
+    Returns:
+        The reprojected stage position on the image."""
+
+    if image.metadata is None or image.metadata.microscope_state is None:
+        raise ValueError("Image metadata or microscope state is not set. Cannot reproject stage position.")
+
+    if image.metadata.microscope_state.stage_position is None:
+        raise ValueError("Image metadata does not contain a valid stage position. Cannot reproject stage position.")
+
+
+    beam_type = image.metadata.image_settings.beam_type
+    base_stage_position = image.metadata.microscope_state.stage_position 
+    pixel_size = image.metadata.pixel_size.x
+
+    scan_rotation = None
+    if beam_type is BeamType.ELECTRON:
+        if image.metadata.microscope_state.electron_beam is None:
+            raise ValueError("Image metadata does not contain a valid electron beam state. Cannot reproject stage position.")
+        scan_rotation = image.metadata.microscope_state.electron_beam.scan_rotation
+    if beam_type is BeamType.ION:
+        if image.metadata.microscope_state.ion_beam is None:
+            raise ValueError("Image metadata does not contain a valid ion beam state. Cannot reproject stage position.")
+        scan_rotation = image.metadata.microscope_state.ion_beam.scan_rotation
+
+    if scan_rotation is None:
+        raise ValueError("Image metadata does not contain a valid scan rotation. Cannot reproject stage position.")
+
+    # difference between current position and image position
+    delta = pos - base_stage_position
+
+    # projection of the positions onto the image
+    dx = delta.x
+    if dx is None:
+        raise ValueError("Stage position x coordinate is None. Cannot reproject stage position.")
+    # dy = microscope._inverse_y_corrected_stage_movement(dy=delta.y, dz=delta.z, beam_type=beam_type) # type: ignore
+    dy = _inverse_y_corrected_stage_movement(image, dy=delta.y, dz=delta.z, beam_type=beam_type) # type: ignore
+
+    pt_delta = Point(dx, -dy)
+    px_delta = pt_delta._to_pixels(pixel_size)
+
+    if np.isclose(scan_rotation, np.pi):
+        px_delta.x *= -1.0
+        px_delta.y *= -1.0
+
+    image_centre = Point(x=image.data.shape[1]/2, y=image.data.shape[0]/2)
+    point = image_centre + px_delta
+
+    return point
+
+def reproject_stage_positions_onto_image2(
+        image:FibsemImage, 
         positions: List[FibsemStagePosition], 
-        show: bool = False, 
-        bound: bool= True) -> plt.Figure:
+        bound: bool=False) -> List[Point]:
+    """Reproject stage positions onto an image. Assumes image is flat to beam.
+    Args:
+        image: The image.
+        positions: The positions.
+        bound: Whether to only return points inside the image.
+    Returns:
+        The reprojected stage positions on the image plane."""
+    from fibsem.ui.napari.utilities import is_inside_image_bounds
+
+    # reprojection of positions onto image coordinates
+    points = []
+    for pos in positions:
+
+        # compucentric rotation correction
+        if image.metadata is None or image.metadata.microscope_state is None:
+            raise ValueError("Image metadata or microscope state is not set. Cannot reproject stage position.")
+        if image.metadata.microscope_state.stage_position is None:
+            raise ValueError("Image metadata does not contain a valid stage position. Cannot reproject stage position.")
+        if image.metadata.microscope_state.stage_position is None:
+            raise ValueError("Image metadata does not contain a valid stage position. Cannot reproject stage position.")
+        if image.metadata.microscope_state.stage_position.r is None:
+            raise ValueError("Image metadata does not contain a valid stage position r coordinate. Cannot reproject stage position.")
+        if pos.r is None:
+            raise ValueError("Stage position r coordinate is None. Cannot reproject stage position.")
+        # automate logic for transforming positions
+        dr = abs(np.rad2deg(image.metadata.microscope_state.stage_position.r - pos.r))
+        if np.isclose(dr, 180, atol=2):
+            pos = _transform_position(pos)
+
+        pt = calculate_reprojected_stage_position2(image, pos)
+        pt.name = pos.name
+
+        if bound and not is_inside_image_bounds((pt.y, pt.x), image.data.shape):
+            continue
+
+        points.append(pt)
+
+    return points
+
+
+def plot_stage_positions_on_image(
+        image: FibsemImage,
+        positions: List[FibsemStagePosition],
+        show: bool = False,
+        bound: bool = True,
+        color: Optional[str] = None,
+        show_scalebar: bool = False) -> Figure:
     """Plot stage positions reprojected on an image as matplotlib figure. Assumes image is flat to beam.
     Args:
         image: The image.
         positions: The positions.
         show: Whether to show the plot.
         bound: Whether to only plot points inside the image.
+        color: The color of the points. (None -> default colour cycle)
     Returns:
         The matplotlib figure."""
     from fibsem.ui.napari.utilities import is_inside_image_bounds
 
     # reproject stage positions onto image 
-    points = reproject_stage_positions_onto_image(image=image, positions=positions)
+    points = reproject_stage_positions_onto_image2(image=image, positions=positions)
 
     # construct matplotlib figure
     fig = plt.figure(figsize=(15, 15))
@@ -324,13 +429,32 @@ def plot_stage_positions_on_image(
     for i, pt in enumerate(points):
 
         # if points outside image, don't plot
-        if bound and not is_inside_image_bounds([pt.y, pt.x], image.data.shape):
-            continue     
+        if bound and not is_inside_image_bounds((pt.y, pt.x), (image.data.shape[0], image.data.shape[1])):
+            continue
 
-        c = POSITION_COLOURS[i%len(POSITION_COLOURS)]
+        if color is None:
+            c = POSITION_COLOURS[i%len(POSITION_COLOURS)]
+        else:
+            c = color
         plt.plot(pt.x, pt.y, ms=20, c=c, marker="+", markeredgewidth=2, label=f"{pt.name}")
         # draw position name next to point
         plt.text(pt.x-225, pt.y-50, pt.name, fontsize=14, color=c, alpha=0.75)
+
+
+    if show_scalebar:
+        try:
+            # add scalebar
+            from matplotlib_scalebar.scalebar import ScaleBar
+            scalebar = ScaleBar(
+                dx=image.metadata.pixel_size.x * image.data.shape[1],
+                color="black",
+                box_color="white",
+                box_alpha=0.5,
+                location="lower right",
+            )
+            plt.gca().add_artist(scalebar)
+        except Exception as e:
+            logging.debug(f"Could not add scalebar: {e}")
 
     plt.axis("off")
     if show:
@@ -436,3 +560,87 @@ def _transform_position(pos: FibsemStagePosition) -> FibsemStagePosition:
     logging.info(f"Initial position {pos} was transformed to {transformed_position}")
 
     return transformed_position
+
+def _inverse_y_corrected_stage_movement(
+    image: FibsemImage,
+    dy: float,
+    dz: float,
+    beam_type: BeamType = BeamType.ELECTRON,
+) -> float:
+        """
+        Calculate the expected_y input from dy, dz stage movements and beam_type.
+        This is the inverse of _y_corrected_stage_movement.
+
+        Args:
+            dy (float): actual y stage movement
+            dz (float): actual z stage movement  
+            beam_type (BeamType, optional): beam_type used. Defaults to BeamType.ELECTRON.
+
+        Returns:
+            float: expected_y input that would produce the given dy, dz movements
+        """
+        if image.metadata is None or image.metadata.system is None:
+            raise ValueError("Image metadata or system metadata is not set. Cannot calculate inverse y corrected stage movement.")
+
+        # all angles in radians
+        sem_column_tilt = np.deg2rad(image.metadata.system.electron.column_tilt)
+        fib_column_tilt = np.deg2rad(image.metadata.system.ion.column_tilt)
+
+        stage_pretilt = np.deg2rad(image.metadata.system.stage.shuttle_pre_tilt)
+
+        stage_rotation_flat_to_eb = np.deg2rad(image.metadata.system.stage.rotation_reference) % (2 * np.pi)
+        stage_rotation_flat_to_ion = np.deg2rad(image.metadata.system.stage.rotation_180) % (2 * np.pi)
+
+        # current stage position
+        current_stage_position = image.metadata.stage_position
+        stage_rotation = current_stage_position.r % (2 * np.pi) if current_stage_position.r is not None else 0.0
+        stage_tilt = current_stage_position.t if current_stage_position.t is not None else 0.0
+
+        # Handle compustage case
+        compustage_sign = 1.0
+        stage_is_compustage = "Arctis" in image.metadata.system.info.model or image.metadata.system.sim.get("is_compustage", False)
+        if stage_is_compustage: # TODO: add compustage to metadata
+            if stage_tilt <= 0:
+                compustage_sign = -1.0
+            stage_tilt += np.pi
+
+        PRETILT_SIGN = 1.0
+        # pretilt angle depends on rotation
+        from fibsem import movement
+        if movement.rotation_angle_is_smaller(stage_rotation, stage_rotation_flat_to_eb, atol=5):
+            PRETILT_SIGN = 1.0
+        if movement.rotation_angle_is_smaller(stage_rotation, stage_rotation_flat_to_ion, atol=5):
+            PRETILT_SIGN = -1.0
+
+        corrected_pretilt_angle = PRETILT_SIGN * (stage_pretilt + sem_column_tilt)
+
+        # perspective tilt adjustment
+        if beam_type == BeamType.ELECTRON:
+            perspective_tilt_adjustment = -corrected_pretilt_angle
+        elif beam_type == BeamType.ION:
+            perspective_tilt_adjustment = (-corrected_pretilt_angle - fib_column_tilt)
+
+        # Reverse the calculations from the forward function:
+        # Forward: y_move = y_sample_move * cos(corrected_pretilt_angle)
+        # Forward: z_move = -y_sample_move * sin(corrected_pretilt_angle)
+        # Therefore: y_sample_move can be calculated from either dy or dz
+
+        # Calculate y_sample_move from dy and dz (should be consistent)
+        cos_pretilt = np.cos(corrected_pretilt_angle)
+        sin_pretilt = np.sin(corrected_pretilt_angle)
+        
+        if abs(cos_pretilt) > abs(sin_pretilt):
+            # Use dy calculation when cos component is larger
+            y_sample_move = dy / cos_pretilt
+        else:
+            # Use dz calculation when sin component is larger
+            y_sample_move = -dz / sin_pretilt
+
+        # Reverse: expected_y = y_sample_move * cos(stage_tilt + perspective_tilt_adjustment)
+        expected_y = y_sample_move * np.cos(stage_tilt + perspective_tilt_adjustment)
+
+        # Apply compustage correction if needed
+        if stage_is_compustage:
+            expected_y *= compustage_sign
+
+        return expected_y

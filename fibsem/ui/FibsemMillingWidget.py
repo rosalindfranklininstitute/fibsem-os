@@ -1,9 +1,11 @@
 import logging
 import math
 import os
+import traceback
 from copy import deepcopy
 from pprint import pprint
 from typing import Dict, List, Optional, Tuple, Union
+import threading
 
 import napari
 import napari.utils.notifications
@@ -133,7 +135,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         self,
         microscope: FibsemMicroscope,
         viewer: napari.Viewer,
-        parent: QtWidgets.QWidget = None,
+        parent: QtWidgets.QWidget,
     ):
         super().__init__(parent=parent)
         self.setupUi(self)
@@ -144,22 +146,22 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         self.image_widget: FibsemImageSettingsWidget = parent.image_widget
         
         # correlation widget
-        self.correlation_widget: CorrelationUI = None
+        self.correlation_widget: Optional[CorrelationUI] = None
 
         self.UPDATING_PATTERN: bool = False
         self.CAN_MOVE_PATTERN: bool = True
-        self.STOP_MILLING: bool = False
+        self._milling_stop_event = threading.Event()  # Event to stop milling
         self.MILLING_STAGES_INITIALISED: bool = False
+        self.is_milling: bool = False
 
         self.current_milling_stage: Optional[FibsemMillingStage] = None
         self.milling_stages: List[FibsemMillingStage] = []
-        self.milling_pattern_layers: List[Layer] = []
+        self.milling_pattern_layers: List[str] = []
 
         self.pattern_attribute_widgets: Dict[str, Tuple[QtWidgets.QLabel, QtWidgets.QWidget]] = {}
-        self.strategy_config_widgets: Dict[str, QtWidgets.QWidget] = {}
+        self.strategy_config_widgets: Dict[str, Tuple[QtWidgets.QLabel, QtWidgets.QWidget]] = {}
 
         self.setup_connections()
-        # TODO: migrate to MILLING_WORKFLOWS: Dict[str, List[FibsemMillingStage]]
 
     def setup_connections(self):
         """Setup the connections for the milling widget."""
@@ -169,7 +171,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
 
         if isinstance(self.microscope, DemoMicroscope) or (not is_thermo and not is_tescan):
             is_thermo, is_tescan = True, False
-        
+
         # MILLING SETTINGS
         # general
         AVAILABLE_MILLING_MODES: List[str] = ["Serial", "Parallel"] # TODO: make microscope method
@@ -179,7 +181,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         self.doubleSpinBox_hfw.valueChanged.connect(self.update_milling_settings_from_ui)
         self.checkBox_milling_acquire_images.stateChanged.connect(self.update_milling_settings_from_ui)
         self.checkBox_milling_acquire_images.stateChanged.connect(self.toggle_imaging_visibility)
-        
+
         # ThermoFisher Only 
         self.label_application_file.setVisible(is_thermo)
         self.comboBox_application_file.setVisible(is_thermo)
@@ -387,9 +389,9 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
     def clear_all_milling_stages(self):
         """Remove all milling stages from the widget."""
         self.milling_stages = []
-        self.comboBox_milling_stage.currentIndexChanged.disconnect()
+        self.comboBox_milling_stage.blockSignals(True)
         self.comboBox_milling_stage.clear()
-        self.comboBox_milling_stage.currentIndexChanged.connect(self.update_milling_stage_ui)
+        self.comboBox_milling_stage.blockSignals(False)
         self.update_selected_milling_stages_ui()
 
         remove_all_napari_shapes_layers(self.viewer) # remove all shape layers
@@ -399,17 +401,18 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         """Set the milling stages in the widget and update the UI."""
         logging.debug(f"Setting milling stages: {len(milling_stages)}")
         self.milling_stages = milling_stages
-        
+
         # very explicitly set what is happening
-        self.comboBox_milling_stage.currentIndexChanged.disconnect()
+        self.comboBox_milling_stage.blockSignals(True)
+        self.comboBox_patterns.blockSignals(True)
         self.comboBox_milling_stage.clear()
         self.comboBox_milling_stage.addItems([stage.name for stage in self.milling_stages])
-        self.comboBox_milling_stage.currentIndexChanged.connect(self.update_milling_stage_ui)
-        
-        self.comboBox_patterns.currentIndexChanged.disconnect()
-        self.comboBox_patterns.setCurrentText(self.milling_stages[0].pattern.name)
-        self.comboBox_patterns.currentIndexChanged.connect(self.update_current_selected_pattern)
-        
+        if self.milling_stages:
+            self.comboBox_patterns.setCurrentText(self.milling_stages[0].pattern.name)
+
+        self.comboBox_milling_stage.blockSignals(False)
+        self.comboBox_patterns.blockSignals(False)
+
         logging.debug(f"Set milling stages: {len(milling_stages)}")
         self.update_milling_stage_ui()
         self.update_selected_milling_stages_ui()
@@ -477,13 +480,16 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
             # default None
             val = getattr(strategy.config, key, None)
 
-            if isinstance(val, (int, float)) and not isinstance(val, bool):
+            if isinstance(val, bool):
+                control_widget = QtWidgets.QCheckBox()
+                control_widget.setChecked(bool(val))
+            elif isinstance(val, (int, float)):
                 # limits
                 min_val = -1000
 
                 control_widget = QtWidgets.QDoubleSpinBox()
-                control_widget.setDecimals(1)
-                control_widget.setSingleStep(0.001)
+                control_widget.setDecimals(2)
+                control_widget.setSingleStep(0.01)
                 control_widget.setRange(min_val, 1000)
                 control_widget.setValue(0)
                 control_widget.setKeyboardTracking(False)
@@ -492,18 +498,16 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
                 if key in ["overtilt"]:
                     control_widget.setSuffix(" °")
                 control_widget.setValue(val)
-            if isinstance(val, str):
+            elif isinstance(val, str):
                 control_widget = QtWidgets.QLineEdit()
                 control_widget.setText(val)
-            if isinstance(val, bool):
-                control_widget = QtWidgets.QCheckBox()
-                control_widget.setChecked(bool(val))
-            if isinstance(val, (tuple, list)):
-                # dont handle for now
-                if "resolution" in key:
-                    control_widget = QtWidgets.QComboBox()
-                    control_widget.addItems(cfg.STANDARD_RESOLUTIONS)
-                    control_widget.setCurrentText(f"{val[0]}x{val[1]}") # TODO: check if in list
+            elif isinstance(val, (tuple, list)) and "resolution" in key:
+                control_widget = QtWidgets.QComboBox()
+                control_widget.addItems(cfg.STANDARD_RESOLUTIONS)
+                control_widget.setCurrentText(f"{val[0]}x{val[1]}") # TODO: check if in list
+            else:
+                logging.error("'%s' of %s cannot be displayed by UI", key, strategy.name)
+                continue
 
             # TODO: add support for scaling, str, bool, etc.
             # TODO: attached events
@@ -522,23 +526,30 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         strategy = self.current_milling_stage.strategy
 
         # get the updated pattern values from ui
-        for i, key in enumerate(strategy.config.required_attributes):
-            
+        for key in strategy.config.required_attributes:
             if key not in self.strategy_config_widgets:
                 continue
 
-            label, widget = self.strategy_config_widgets[key]
+            _, widget = self.strategy_config_widgets[key]
 
             if isinstance(widget, QtWidgets.QDoubleSpinBox):
-                value = scale_value_for_display(key, widget.value(), constants.MICRO_TO_SI) # TODO: support other scales
-            if isinstance(widget, QtWidgets.QLineEdit):
+                value = scale_value_for_display(
+                    key, widget.value(), constants.MICRO_TO_SI
+                )  # TODO: support other scales
+            elif isinstance(widget, QtWidgets.QLineEdit):
                 value = widget.text()
-            if isinstance(widget, QtWidgets.QCheckBox):
+            elif isinstance(widget, QtWidgets.QCheckBox):
                 value = widget.isChecked()
-            if isinstance(widget, QtWidgets.QComboBox):
-                value = widget.currentText()
-                if "resolution" in key:
-                    value = tuple(map(int, value.split("x")))
+            elif isinstance(widget, QtWidgets.QComboBox) and "resolution" in key:
+                value = tuple(map(int, widget.currentText().split("x")))
+            else:
+                logging.error(
+                    "Unable to parse %s %s from %s",
+                    strategy.name,
+                    key,
+                    type(widget).__name__,
+                )
+                continue
             # TODO: add support for scaling, str, bool, etc.
 
             setattr(strategy.config, key, value)
@@ -559,9 +570,9 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
     def get_milling_alignment_from_ui(self):
         """Get the drift correction settings from the UI."""
         milling_alignment = self.current_milling_stage.alignment
-        milling_alignment.enabled=self.checkBox_alignment_enabled.isChecked()
-        milling_alignment.interval_enabled=self.checkBox_alignment_interval_enabled.isChecked()
-        milling_alignment.interval=self.doubleSpinBox_alignment_interval.value()
+        milling_alignment.enabled = self.checkBox_alignment_enabled.isChecked()
+        milling_alignment.interval_enabled = self.checkBox_alignment_interval_enabled.isChecked()
+        milling_alignment.interval = int(self.doubleSpinBox_alignment_interval.value())
         #milling_alignment.rect=self.image_widget.get_alignment_area(), # TODO: get the alignment area from the image widget
         return milling_alignment
 
@@ -685,13 +696,18 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
             # default None
             val = getattr(pattern, key, None)
 
-            if isinstance(val, (int, float)):
+            if isinstance(val, bool):
+                control_widget = QtWidgets.QCheckBox()
+                control_widget.setChecked(bool(val))
+                control_widget.stateChanged.connect(self.redraw_patterns)
+
+            elif isinstance(val, (int, float)):
                 # limits
                 min_val = -1000 # if key in LINE_KEYS else 0 # why not?
 
                 control_widget = QtWidgets.QDoubleSpinBox()
                 control_widget.setDecimals(2)
-                control_widget.setSingleStep(0.001)
+                control_widget.setSingleStep(0.01)
                 control_widget.setRange(min_val, 1000)
                 control_widget.setValue(0)
                 control_widget.setKeyboardTracking(False)
@@ -709,22 +725,26 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
                 control_widget.setValue(value)
                 control_widget.valueChanged.connect(self.redraw_patterns)
             
-            if isinstance(val, CrossSectionPattern):
+            elif isinstance(val, CrossSectionPattern):
                 control_widget = QtWidgets.QComboBox()
                 control_widget.addItems([section.name for section in CrossSectionPattern]) # TODO: store the options somewhere?
                 control_widget.setCurrentText(getattr(pattern, key, CrossSectionPattern.Rectangle).name)
                 control_widget.currentIndexChanged.connect(self.redraw_patterns)
 
-            if key == "scan_direction": # TODO: migrate to Enum??
+            elif key == "scan_direction": # TODO: migrate to Enum??
                 control_widget = QtWidgets.QComboBox()
                 control_widget.addItems(self.AVAILABLE_SCAN_DIRECTIONS)
                 control_widget.setCurrentText(val)
                 control_widget.currentIndexChanged.connect(self.redraw_patterns)
 
-            if isinstance(val, bool):
-                control_widget = QtWidgets.QCheckBox()
-                control_widget.setChecked(bool(val))
-                control_widget.stateChanged.connect(self.redraw_patterns)
+            elif isinstance(val, str):
+                control_widget = QtWidgets.QLineEdit()
+                control_widget.setText(val)
+                control_widget.editingFinished.connect(self.redraw_patterns)
+
+            else:
+                logging.error("'%s' of %s cannot be displayed by UI", key, pattern.name)
+                continue
 
             # add to grid layout
             self.gridLayout_patterns.addWidget(label, i, 0)
@@ -778,30 +798,38 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
                 widget.setVisible(show)
 
     def get_pattern_from_ui_v2(self):
-
         pattern = self.current_milling_stage.pattern
 
         # get the updated pattern values from ui
-        for i, key in enumerate(pattern.required_attributes):
-            label, widget = self.pattern_attribute_widgets[key]
+        for key in pattern.required_attributes:
+            _, widget = self.pattern_attribute_widgets[key]
 
             if isinstance(widget, QtWidgets.QDoubleSpinBox):
-                value = scale_value_for_display(key, widget.value(), constants.MICRO_TO_SI)
-            if isinstance(widget, QtWidgets.QComboBox):
+                value = scale_value_for_display(
+                    key, widget.value(), constants.MICRO_TO_SI
+                )
+            elif isinstance(widget, QtWidgets.QComboBox):
                 value = widget.currentText()
-
-                if key == "cross_section": # TODO: need a more general way to handle this
+                if key == "cross_section":
+                    # TODO: need a more general way to handle this
                     value = CrossSectionPattern[value]
-            if isinstance(widget, QtWidgets.QCheckBox):
+            elif isinstance(widget, QtWidgets.QCheckBox):
                 value = widget.isChecked()
+            elif isinstance(widget, QtWidgets.QLineEdit):
+                value = widget.text()
+            else:
+                logging.error(
+                    "Unable to parse %s %s from %s",
+                    pattern.name,
+                    key,
+                    type(widget).__name__,
+                )
+                continue
 
             setattr(pattern, key, value)
 
         pattern.point = self.get_point_from_ui()
-        
-        # from pprint import pprint
-        # pprint(pattern.to_dict())
-        
+
         return pattern
 
     def _single_click(self, layer, event):
@@ -830,7 +858,10 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         if beam_type is not BeamType.ION:
             napari.utils.notifications.show_warning("Patterns can only be placed inside the FIB image.")
             return
-        
+        if image.metadata is None:
+            napari.utils.notifications.show_warning("Image metadata is not available.")
+            return
+
         point = conversions.image_to_microscope_image_coordinates(
                 coord=Point(x=coords[1], y=coords[0]), # yx required
                 image=image.data,
@@ -943,7 +974,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
 
         # get the milling current
         current_amps = 20e-12 # default value
-        if isinstance(self.microscope, (ThermoMicroscope, DemoMicroscope)):
+        if not isinstance(self.microscope, TescanMicroscope):
             current_amps = self.comboBox_milling_current.currentData()
 
         milling_settings = FibsemMillingSettings(
@@ -973,7 +1004,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         total_time = estimate_total_milling_time(milling_stages)
         self.label_milling_estimated_time.setText(f"Estimated Milling Time: {format_duration(total_time)}")
 
-    def get_selected_milling_stages(self) -> Optional[FibsemMillingStage]:
+    def get_selected_milling_stages(self) -> List[FibsemMillingStage]:
         """Return the milling stages that are checked in the list widget."""
         checked_indexes = []
         for i in range(self.listWidget_active_milling_stages.count()):
@@ -998,10 +1029,12 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         selected_milling_stages = self.get_selected_milling_stages()
 
         # start milling
+        self.is_milling = True
+        self._milling_stop_event.clear()  # reset the stop event
         worker = self.run_milling_step(selected_milling_stages)
         worker.finished.connect(self.run_milling_finished)
         worker.start()
-       
+
     @thread_worker
     def run_milling_step(self, milling_stages: List[FibsemMillingStage]) -> None:
         """Threaded worker to run the milling stages."""
@@ -1009,22 +1042,28 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
         mill_stages(microscope=self.microscope, 
                             stages=milling_stages, 
                             parent_ui=self)
+        # task based milling interface
+        # from fibsem.milling.tasks import FibsemMillingTaskConfig, run_milling_task
+        # task_config = FibsemMillingTaskConfig.from_stages(stages=milling_stages)
+        # run_milling_task(microscope=self.microscope,
+        #                  config=task_config,
+        #                  parent_ui=self)
         return
 
     def run_milling_finished(self):
+        """Callback when the milling is finished."""
 
         # take new images and update ui
         self._toggle_interactions(enabled=True)
         self.image_widget.acquire_reference_images()
         self.update_ui() # TODO: convert to signal for image acquisition
         self.milling_progress_signal.emit({"finished": True, "msg": "Milling Finished."})
-        self.STOP_MILLING = False
+        self.is_milling = False
 
     def stop_milling(self):
         """Request milling stop."""
-        self.STOP_MILLING = True
+        self._milling_stop_event.set()
         self.microscope.stop_milling()
-        self.milling_progress_signal.emit({"finished": True, "msg": "Milling Stopped by User."})
 
     def pause_resume_milling(self):
         """Request milling pause / resume."""
@@ -1095,16 +1134,16 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
             self.label_milling_information.setVisible(True)
             self.label_milling_information.setText(msg)
 
-        progress_info = ddict.get("progress", None)
+        progress_info: Dict[str, float] = ddict.get("progress", None)
         if progress_info is not None:
             self.update_progress_bar(progress_info)
-            
-        # finsihed milling
+
+        # finished milling
         if ddict.get("finished", False):
             self.MILLING_IS_FINISHED = True
             self.update_progress_bar({"state": "finished"})
 
-    def _toggle_interactions(self, enabled: bool = True, caller: str = None, milling: bool = False):
+    def _toggle_interactions(self, enabled: bool = True, caller: Optional[str] = None, milling: bool = False):
         """Toggle microscope and pattern interactions."""
 
         self.pushButton_add_milling_stage.setEnabled(enabled)
@@ -1190,7 +1229,7 @@ class FibsemMillingWidget(FibsemMillingWidgetUI.Ui_Form, QtWidgets.QWidget):
             )  
 
         except Exception as e:
-            napari.utils.notifications.show_error(f"Error drawing patterns: {e}")
+            napari.utils.notifications.show_error(f"Error drawing patterns: {traceback.format_exc()}")
             logging.error(e)
 
         self.image_widget.restore_active_layer_for_movement()

@@ -2,8 +2,10 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass, field, fields, asdict
 from typing import Dict, List, Tuple, Union, Any, Optional, Type, ClassVar, TypeVar, Generic
+from os import PathLike
 
 import numpy as np
+from numpy.typing import NDArray
 
 from fibsem import constants
 from fibsem.structures import (
@@ -32,6 +34,7 @@ class BasePattern(ABC, Generic[TFibsemPatternSettings]):
     shapes: Optional[List[TFibsemPatternSettings]] = field(default=None, init=False)
 
     _advanced_attributes: ClassVar[Tuple[str, ...]] = ()
+    _hidden_attributes: ClassVar[Tuple[str, ...]] = ()
 
     @abstractmethod
     def define(self) -> List[TFibsemPatternSettings]:
@@ -66,7 +69,11 @@ class BasePattern(ABC, Generic[TFibsemPatternSettings]):
                 
     @property
     def required_attributes(self) -> Tuple[str, ...]:
-        return tuple(f.name for f in fields(self) if f not in fields(BasePattern))
+        return tuple(
+            f.name
+            for f in fields(self)
+            if f.name not in self._hidden_attributes and f not in fields(BasePattern) 
+        )
     
     @property
     def advanced_attributes(self) -> Tuple[str, ...]:
@@ -77,29 +84,123 @@ class BasePattern(ABC, Generic[TFibsemPatternSettings]):
         # calculate the total volume of the milling pattern (sum of all shapes)
         return sum([shape.volume for shape in self.define()])
 
+
 @dataclass
 class BitmapPattern(BasePattern[FibsemBitmapSettings]):
     width: float = 10.0e-6
     height: float = 10.0e-6
     depth: float = 1.0e-6
     rotation: float = 0
+    time: float = 0
+    passes: int = 0
+    scan_direction: str = "TopToBottom"
     path: str = ""
+    array: Optional[NDArray[Any]] = None
+    _advanced_attributes = ("time",)
+    _hidden_attributes = ("array",)  # Can't set an array via the GUI
 
     name: ClassVar[str] = "Bitmap"
 
     def define(self) -> List[FibsemBitmapSettings]:
+        path: Optional[str] = self.path.strip()
+        if not path:
+            path = None
+        array = self.array
 
         shape = FibsemBitmapSettings(
             width=self.width,
             height=self.height,
             depth=self.depth,
-            rotation=self.rotation,
-            path=self.path,
             centre_x=self.point.x,
             centre_y=self.point.y,
+            rotation=self.rotation * constants.DEGREES_TO_RADIANS,
+            scan_direction=self.scan_direction,
+            passes=self.passes,
+            time=self.time,
+            path=path,
+            array=array,
+        )
+        self.shapes = [shape]
+        return self.shapes
+
+
+@dataclass
+class TrenchBitmapPattern(BasePattern[FibsemBitmapSettings]):
+    width: float = 10.0e-6
+    depth: float = 10.0e-6
+    spacing: float = 1.0e-6
+    upper_trench_height: float = 5.0e-6
+    lower_trench_height: float = 5.0e-6
+    time: float = 0
+    path: str = ""
+    path_lower: str = ""  # path will be flipped and used if not given
+    array: Optional[NDArray[Any]] = None
+    array_lower: Optional[NDArray[Any]] = None
+    _advanced_attributes = ("time", "path_lower")
+    _hidden_attributes = ("array", "array_lower")  # Can't set an array via the GUI
+
+    name: ClassVar[str] = "TrenchBitmap"
+
+    def define(self) -> List[FibsemBitmapSettings]:
+        path: Optional[str] = self.path.strip()
+        if not path:
+            path = None
+        array = self.array
+
+        # calculate the centre of the upper and lower trench
+        centre_lower_y = self.point.y - (
+            self.spacing / 2 + self.lower_trench_height / 2
+        )
+        centre_upper_y = self.point.y + (
+            self.spacing / 2 + self.upper_trench_height / 2
         )
 
-        self.shapes = [shape]
+        flip_lower_y = False
+
+        array_lower = self.array_lower
+        path_lower = self.path_lower.strip()
+
+        if not path_lower:
+            path_lower = None
+
+        if array_lower is None:
+            array_lower = None
+            if path_lower is None:
+                path_lower = None
+                # Fallback on upper bitmap/path
+                flip_lower_y = True
+                path_lower = path
+                array_lower = array
+
+        # mill settings
+        lower_pattern_settings = FibsemBitmapSettings(
+            width=self.width,
+            height=self.lower_trench_height,
+            depth=self.depth,
+            rotation=0,
+            centre_x=self.point.x,
+            centre_y=centre_lower_y,
+            scan_direction="BottomToTop",
+            time=self.time,
+            flip_y=flip_lower_y,
+            path=path_lower,
+            array=array_lower,
+        )
+
+        upper_pattern_settings = FibsemBitmapSettings(
+            width=self.width,
+            height=self.upper_trench_height,
+            depth=self.depth,
+            rotation=0,
+            centre_x=self.point.x,
+            centre_y=centre_upper_y,
+            scan_direction="TopToBottom",
+            time=self.time,
+            path=path,
+            array=array,
+        )
+
+        self.shapes = [lower_pattern_settings, upper_pattern_settings]
         return self.shapes
 
 
@@ -183,7 +284,7 @@ class CirclePattern(BasePattern[FibsemCircleSettings]):
 @dataclass
 class TrenchPattern(BasePattern[Union[FibsemRectangleSettings, FibsemCircleSettings]]):
     width: float = 10.0e-6
-    depth: float = 2.0e-6
+    depth: float = 1.0e-6
     spacing: float = 5.0e-6
     upper_trench_height: float = 5.0e-6
     lower_trench_height: float = 5.0e-6
@@ -238,7 +339,7 @@ class TrenchPattern(BasePattern[Union[FibsemRectangleSettings, FibsemCircleSetti
             time = time
         )
 
-        self.shapes = [lower_trench_settings, upper_trench_settings]
+        self.shapes = [upper_trench_settings, lower_trench_settings]
 
         # add fillet to the corners
         if fillet > 0:            
@@ -393,9 +494,9 @@ class HorseshoePattern(BasePattern[FibsemRectangleSettings]):
             cross_section=cross_section
         )
 
-        self.shapes = [lower_pattern, upper_pattern, side_pattern]
+        self.shapes = [upper_pattern, lower_pattern, side_pattern]
         return self.shapes
-    
+
 
 @dataclass
 class HorseshoePatternVertical(BasePattern):
@@ -455,8 +556,8 @@ class HorseshoePatternVertical(BasePattern):
             scan_direction=scan_direction,
             cross_section=cross_section
         )
-        
-        self.shapes = [left_pattern,right_pattern, upper_pattern]
+
+        self.shapes = [upper_pattern, left_pattern,right_pattern]
         return self.shapes
 
 
@@ -499,7 +600,7 @@ class SerialSectionPattern(BasePattern[FibsemLineSettings]):
                                              start_y=point.y + section_y, 
                                              end_y=point.y + section_y, 
                                              depth=section_depth)
-        
+
         self.shapes = [section_pattern]
 
         if use_side_patterns:
@@ -737,7 +838,7 @@ class ArrayPattern(BasePattern[FibsemRectangleSettings]):
         n_rows = int(self.n_rows)
         pitch_vertical = self.pitch_vertical
         pitch_horizontal = self.pitch_horizontal
-        rotation = self.rotation
+        rotation = self.rotation * constants.DEGREES_TO_RADIANS
         passes = self.passes
         scan_direction = self.scan_direction
         passes = int(passes)

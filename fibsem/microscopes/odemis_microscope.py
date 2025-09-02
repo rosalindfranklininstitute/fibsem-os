@@ -222,7 +222,7 @@ class OdemisMicroscope(FibsemMicroscope):
     milling_progress_signal = Signal(dict)
     _last_imaging_settings: ImageSettings
 
-    def __init__(self, system_settings: SystemSettings = None):
+    def __init__(self, system_settings: SystemSettings):
         self.system: SystemSettings = system_settings
 
         self.connection: OdemisAutoscriptClient = model.getComponent(role="fibsem")
@@ -377,7 +377,15 @@ class OdemisMicroscope(FibsemMicroscope):
         self.connection.run_auto_focus(beam_type_to_odemis[beam_type])
 
     def beam_shift(self, dx: float, dy: float, beam_type: BeamType) -> None:
-        self.connection.move_beam_shift(dx, dy, beam_type_to_odemis[beam_type])
+        """Move the beam shift by dx and dy in meters (relative movement).
+        Args:
+            dx (float): The x shift in meters.
+            dy (float): The y shift in meters.
+            beam_type (BeamType): The type of beam to shift (ELECTRON or ION).
+        """
+        current_shift = self.get_beam_shift(beam_type=beam_type)
+        new_shift = Point(x=current_shift.x + dx, y=current_shift.y + dy)
+        self.set_beam_shift(new_shift, beam_type=beam_type)
 
     def _get(self, key: str, beam_type: BeamType = None) -> str:
         if beam_type is not None:
@@ -797,10 +805,17 @@ class OdemisMicroscope(FibsemMicroscope):
         """Move the stage vertically by the specified amount."""
         return ThermoMicroscope.vertical_move(self, dy=dy, dx=dx, static_wd=static_wd)
 
+    def move_coincident_from_sem(self, dx: float, dy: float) -> FibsemStagePosition:
+        """Correct coincident point from SEM to FIB stage position."""
+        return ThermoMicroscope.move_coincident_from_sem(self, dx=dx, dy=dy)
+
     def _y_corrected_stage_movement(
         self, expected_y: float, beam_type: BeamType
     ) -> FibsemStagePosition:
         return ThermoMicroscope._y_corrected_stage_movement(self, expected_y, beam_type)
+
+    def _inverse_y_corrected_stage_movement(self, dy: float, dz: float, beam_type: BeamType = BeamType.ELECTRON) -> float:
+        return ThermoMicroscope._inverse_y_corrected_stage_movement(self, dy=dy, dz=dz, beam_type=beam_type)
 
     def project_stable_move(
         self,
@@ -820,7 +835,7 @@ class OdemisMicroscope(FibsemMicroscope):
     def safe_absolute_stage_movement(self, position: FibsemStagePosition) -> None:
         return ThermoMicroscope.safe_absolute_stage_movement(self, position)
 
-    def draw_bitmap_pattern(self, pattern_settings: FibsemBitmapSettings, path: str):
+    def draw_bitmap_pattern(self, pattern_settings: FibsemBitmapSettings) -> None:
         pass
 
     def draw_rectangle(self, pattern_settings: FibsemRectangleSettings):

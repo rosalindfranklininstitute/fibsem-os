@@ -66,3 +66,5 @@ CLAUDE.md
 fibsem/fm/*.ome.tiff
 notes.md
 fibsem/ui/test-ndv.py
+scripts/reporting-notebook.ipynb
+fibsem/applications/autolamella/protocol/protocol-on-grid-trench-horizontal.yaml

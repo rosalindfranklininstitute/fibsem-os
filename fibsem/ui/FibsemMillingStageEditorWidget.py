@@ -1,7 +1,7 @@
 import copy
 import logging
 import os
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 
 import napari
 import napari.utils.notifications
@@ -336,11 +336,6 @@ PARAMETER_MAPPING = {
 # multi-stages
 # advanced settings display
 
-def pretty_name(milling_stage: FibsemMillingStage) -> str:
-    milling_current = milling_stage.milling.milling_current
-    mc = format_value(val=milling_current, unit="A", precision=1)
-    txt = f"{milling_stage.name} - {milling_stage.pattern.name} ({mc})"
-    return txt
 
 class FibsemMillingStageWidget(QWidget):
     _milling_stage_changed = pyqtSignal(FibsemMillingStage)
@@ -984,13 +979,12 @@ class FibsemMillingStageEditorWidget(QWidget):
                 item = self.list_widget_milling_stages.item(i)
                 # update the text of the item
                 if item:
-                    item.setText(pretty_name(milling_stage))
+                    item.setText(milling_stage.pretty_name)
 
-    def _add_milling_stage(self, milling_stage: FibsemMillingStage = None):
+    def _add_milling_stage(self, milling_stage: Optional[FibsemMillingStage] = None):
         """Add a new milling stage to the editor."""
-        
-        # create a default milling stage if not provided
         if milling_stage is None:
+            # create a default milling stage if not provided
             num = len(self._milling_stages) + 1
             milling_stage = FibsemMillingStage(name=f"Milling Stage {num}", num=num)
 
@@ -1015,7 +1009,7 @@ class FibsemMillingStageEditorWidget(QWidget):
 
         # create related list widget item
         # TODO: migrate to setData, so we can store the milling stage object directly
-        item = QListWidgetItem(pretty_name(milling_stage))
+        item = QListWidgetItem(milling_stage.pretty_name)
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
         item.setCheckState(Qt.Checked)
         self.list_widget_milling_stages.addItem(item)
@@ -1201,7 +1195,7 @@ class FibsemMillingStageEditorWidget(QWidget):
         self._milling_stages_updated.emit(milling_stages)
 
 
-from autolamella.structures import AutoLamellaProtocol, Experiment, Lamella
+from fibsem.applications.autolamella.structures import AutoLamellaProtocol, Experiment, Lamella
 # TODO: move to autolamella
 class AutoLamellaProtocolEditorWidget(QWidget):
     """A widget to edit the AutoLamella protocol."""
@@ -1390,7 +1384,7 @@ def show_protocol_editor(viewer: napari.Viewer,
 
 if __name__ == "__main__":
     
-    from autolamella.structures import AutoLamellaProtocol
+    from fibsem.applications.autolamella.structures import AutoLamellaProtocol
 
     microscope, settings = utils.setup_session()
     viewer = napari.Viewer()

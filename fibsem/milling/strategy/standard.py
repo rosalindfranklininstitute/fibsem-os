@@ -2,8 +2,7 @@ import logging
 from dataclasses import dataclass
 
 from fibsem.microscope import FibsemMicroscope
-from fibsem.milling import (draw_patterns, run_milling,
-                            setup_milling)
+from fibsem.milling import setup_milling
 from fibsem.milling.base import (FibsemMillingStage, MillingStrategy,
                                  MillingStrategyConfig)
 
@@ -31,12 +30,17 @@ class StandardMillingStrategy(MillingStrategy[StandardMillingConfig]):
         logging.info(f"Running {self.name} Milling Strategy for {stage.name}")
         setup_milling(microscope, milling_stage=stage)
 
-        draw_patterns(microscope, stage.pattern.define())
+        if parent_ui and hasattr(parent_ui, "_milling_stop_event"):
+            if parent_ui._milling_stop_event.is_set():
+                logging.info(f"Stopping {self.name} Milling Strategy for {stage.name}")
+                return
+
+        microscope.draw_patterns(stage.pattern.define())
 
         estimated_time = microscope.estimate_milling_time()
         logging.info(f"Estimated time for {stage.name}: {estimated_time:.2f} seconds")
 
-        if parent_ui:
+        if parent_ui and hasattr(parent_ui, "milling_progress_signal"):
             parent_ui.milling_progress_signal.emit({"msg": f"Running {stage.name}...", 
                                                     "progress": 
                                                         {"started": True,
@@ -45,8 +49,7 @@ class StandardMillingStrategy(MillingStrategy[StandardMillingConfig]):
                                                             "name": stage.name}
                                                         })
 
-        run_milling(
-            microscope=microscope,
+        microscope.run_milling(
             milling_current=stage.milling.milling_current,
             milling_voltage=stage.milling.milling_voltage,
             asynch=asynch,
