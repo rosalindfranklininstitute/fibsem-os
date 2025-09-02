@@ -2,8 +2,8 @@ name: autolamella-task-protocol
 description: a description of the protocol
 version: 0.1
 tasks:
-  MILL_TRENCH:
-    name: MILL_TRENCH
+  My Trench Milling:
+    task_type: MILL_TRENCH
     description: mill trenches around region of interest at high current
     parameters: # dict
       orientation: FIB
@@ -30,8 +30,8 @@ tasks:
                 upper_trench_height: 1.6e-05
                 width: 2.2e-05
             strategy: {}
-  MILL_UNDERCUT:
-    name: MILL_UNDERCUT
+  My Undercut Milling:
+    task_type: MILL_UNDERCUT
     description: mill regions underneath the lamella at an oblique angle
     parameters: # dict
       milling_angles: [25, 20]
@@ -65,8 +65,8 @@ tasks:
                 name: Rectangle
                 width: 2.2e-05
             strategy: {}
-  SETUP_LAMELLA:
-    name: SETUP_LAMELLA
+  My Setup Lamella:
+    task_type: SETUP_LAMELLA
     description: select lamella position and milling pattern position
     parameters:
       milling_angle: 15 # deg
@@ -199,8 +199,8 @@ tasks:
       #           upper_trench_height: 2.5e-07
       #           width: 9.0e-06
       #       strategy: {}
-  MILL_ROUGH:
-    name: MILL_ROUGH
+  My Rough Milling:
+    task_type: MILL_ROUGH
     description: mill rough lamella trenches, and stress relief features
     parameters: # dict
     milling:
@@ -275,8 +275,8 @@ tasks:
                 upper_trench_height: 2.0e-06
                 width: 9.5e-06
             strategy: {}
-  SPOT_BURN_FIDUCIAL:
-    name: SPOT_BURN_FIDUCIAL
+  My Spot Burn:
+    task_type: SPOT_BURN_FIDUCIAL
     description: mill spot fiducial markers for correlation 
     parameters: # dict
       milling_current: 60.0e-12 # A
@@ -300,8 +300,8 @@ tasks:
   #         gain: 1.0
   #         binning: 2x2
   #     zparams: {zmin: -10.0e-6, zmax: 10.0e-6, zstep: 1.0e-6}
-  MILL_POLISHING:
-    name: MILL_POLISHING
+  My Polishing:
+    task_type: MILL_POLISHING
     description: final low current polishing of the lamella
     requires: [SETUP_LAMELLA, MILL_ROUGH]
     parameters: # dict
@@ -347,12 +347,12 @@ workflow:
   name: Autolamella Workflow
   description: a description of the workflow
   tasks:
-    # - {name: MILL_TRENCH, supervise: true, required: true}
-    # - {name: MILL_UNDERCUT, supervise: true, required: true}
-    - {name: SETUP_LAMELLA, supervise: true, required: true}
-    - {name: MILL_ROUGH, supervise: true, required: true, requires: [SETUP_LAMELLA]}
-    - {name: SPOT_BURN_FIDUCIAL, supervise: true, required: false, requires: [SETUP_LAMELLA]}
-    - {name: MILL_POLISHING, supervise: true, required: true, requires: [MILL_ROUGH]}
+    # - {name: My Trench Milling, supervise: true, required: true}
+    # - {name: My Undercut Milling, supervise: true, required: true}
+    - {name: My Setup Lamella, supervise: true, required: true}
+    - {name: My Rough Milling, supervise: true, required: true, requires: [My Setup Lamella]}
+    - {name: My Spot Burn, supervise: true, required: false, requires: [My Setup Lamella]}
+    - {name: My Polishing, supervise: true, required: true, requires: [My Rough Milling]}
 
 
 grid-tasks:

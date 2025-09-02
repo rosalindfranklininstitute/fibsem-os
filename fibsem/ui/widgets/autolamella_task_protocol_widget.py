@@ -38,7 +38,6 @@ class AutoLamellaTaskProtocolWidget(QWidget):
     # Signals
     protocol_changed = pyqtSignal(AutoLamellaTaskProtocol)
     workflow_changed = pyqtSignal(AutoLamellaWorkflowConfig)
-    task_selected = pyqtSignal(AutoLamellaTaskDescription)
     task_config_changed = pyqtSignal(AutoLamellaTaskConfig)
 
     def __init__(
@@ -186,8 +185,6 @@ class AutoLamellaTaskProtocolWidget(QWidget):
         # Show the task configuration for the selected task
         self._show_task_config(task_desc)
 
-        self.task_selected.emit(task_desc)
-
     def _on_task_config_changed(self, task_config: AutoLamellaTaskConfig):
         """Handle task configuration parameter changes."""
         # Store the task config in the protocol's task_config dictionary
@@ -199,23 +196,18 @@ class AutoLamellaTaskProtocolWidget(QWidget):
         self.task_config_changed.emit(task_config)
         self.protocol_changed.emit(self.protocol)
 
+    # I need to restrict the task configurations available in the workflow, to only ones that are in the task_config
     def _show_task_config(self, task_desc: AutoLamellaTaskDescription):
         """Show the task configuration widget for the selected task."""
-        if task_desc.name not in TASK_REGISTRY:
-            # Clear task config widget if task not found
-            self.task_config_widget.set_task_config(None)
-            return
+        # task_desc is not a unique identifier, we need to check the protocol first
 
-        # Check if we already have a task config for this task
+        # Check if we already have a task config for this task, otherwise use default
         if task_desc.name in self.protocol.task_config:
-            # Use existing task config
             task_config = self.protocol.task_config[task_desc.name]
         else:
-            # Create new default config instance
             task_config = DEFAULT_PROTOCOL.task_config.get(task_desc.name)
             if task_config is None:
                 raise ValueError(f"No default config found for task: {task_desc.name}")
-            # Store it in the protocol
             self.protocol.task_config[task_desc.name] = task_config
 
         # Set the task config in the widget
@@ -241,6 +233,14 @@ class AutoLamellaTaskProtocolWidget(QWidget):
         self.protocol.workflow_config = workflow_config
         self.workflow_widget.set_workflow_config(workflow_config)
 
+    def _add_default_task_config(self, task_type: str, task_name: str) -> None:
+        """Add a default task configuration for the given task type, if not available"""
+        if task_name in self.protocol.task_config:
+            return
+        for _, task_config in DEFAULT_PROTOCOL.task_config.items():
+            if task_config.task_type == task_type:
+                self.protocol.task_config[task_name] = task_config
+                return
 
 if __name__ == "__main__":
     import napari
@@ -258,7 +258,6 @@ if __name__ == "__main__":
     widget = AutoLamellaTaskProtocolWidget(DEFAULT_PROTOCOL)
     widget.protocol_changed.connect(lambda protocol: print(f"Protocol changed: {protocol.name}"))
     widget.workflow_changed.connect(lambda config: print_workflow_config(config))
-    widget.task_selected.connect(lambda task: print(f"Protocol signal - Task selected: {task.name}"))
     widget.task_config_changed.connect(lambda config: print(f"Protocol signal - Task config changed: {config}"))
     viewer.window.add_dock_widget(
         widget, name="AutoLamella Task Protocol", add_vertical_stretch=False

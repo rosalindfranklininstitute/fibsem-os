@@ -332,7 +332,7 @@ class AutoLamellaTaskConfigWidget(QWidget):
     def _create_parameter_widget(self, name: str, value: Any, annotation: type, metadata: Optional[dict] = None) -> Optional[ParameterWidget]:
         """Create the appropriate parameter widget for the given type."""
         metadata = metadata or {}
-        
+
         # Handle Union types (e.g., Optional[T])
         origin = getattr(annotation, '__origin__', None)
         if origin is Union:
@@ -341,7 +341,7 @@ class AutoLamellaTaskConfigWidget(QWidget):
             non_none_types = [arg for arg in args if arg is not type(None)]
             if non_none_types:
                 annotation = non_none_types[0]
-        
+
         # Determine widget type based on annotation
         if annotation == bool:
             return BoolParameterWidget(name, value, annotation)

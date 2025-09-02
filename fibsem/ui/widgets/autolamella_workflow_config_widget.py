@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QPushButton,
     QVBoxLayout,
@@ -25,6 +26,10 @@ from fibsem.ui.stylesheets import (
     BLUE_PUSHBUTTON_STYLE,
 )
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fibsem.ui.widgets.autolamella_task_protocol_widget import AutoLamellaTaskProtocolWidget
 
 class TaskDescriptionWidget(QFrame):
     """Widget for displaying and editing a single task description."""
@@ -180,6 +185,7 @@ class AutoLamellaWorkflowConfigWidget(QWidget):
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
+        self.parent_widget: 'AutoLamellaTaskProtocolWidget' = parent
         self.workflow_config = workflow_config or AutoLamellaWorkflowConfig()
         self._task_widgets: Dict[str, TaskDescriptionWidget] = {}
         self._selected_task: Optional[str] = None
@@ -229,11 +235,11 @@ class AutoLamellaWorkflowConfigWidget(QWidget):
         self.task_combo.clear()
         self.task_combo.addItem("Select a task...", "")
 
-        for task_name, task_class in TASK_REGISTRY.items():
-            display_name = task_name
+        for task_type, task_class in TASK_REGISTRY.items():
+            display_name = task_type
             if hasattr(task_class.config_cls, "display_name"):
-                display_name = f"{task_class.config_cls.display_name}"
-            self.task_combo.addItem(display_name, task_name)
+                display_name = f"{task_class.config_cls.display_name} ({task_type})"
+            self.task_combo.addItem(display_name, task_type)
 
     def _update_from_config(self):
         """Update widget from workflow config."""
@@ -279,8 +285,26 @@ class AutoLamellaWorkflowConfigWidget(QWidget):
 
     def _on_add_task(self):
         """Handle add task button click."""
-        task_name = self.task_combo.currentData()
+        task_type = self.task_combo.currentData()
+        if not task_type:
+            return
+
+        # Prompt user for task name
+        display_name = self._get_display_name(task_type)
+        task_name, ok = QInputDialog.getText(
+            self,
+            "Enter Task Name",
+            f"Enter a name for the '{display_name}' task:",
+            text=display_name,
+        )
+
+        if not ok:
+            return
+
+        # Validate task name
+        task_name = task_name.strip()
         if not task_name:
+            QMessageBox.warning(self, "Invalid Name", "Task name cannot be empty.")
             return
 
         # Check if task already exists
@@ -298,13 +322,12 @@ class AutoLamellaWorkflowConfigWidget(QWidget):
             requires=[],
         )
 
+        if self.parent_widget:
+            self.parent_widget._add_default_task_config(task_type, task_name)
+
         # Add to workflow config
         self.workflow_config.tasks.append(task_desc)
-
-        # Add widget
         self._add_task_widget(task_desc)
-
-        # Reset combo selection
         self.task_combo.setCurrentIndex(0)
 
         self.workflow_changed.emit(self.workflow_config)

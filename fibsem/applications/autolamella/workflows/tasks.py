@@ -92,7 +92,7 @@ class MillTrenchTaskConfig(AutoLamellaTaskConfig):
     align_reference: bool = False  # whether to align to a trench reference image
     charge_neutralisation: bool = True
     orientation: str = "FIB"
-    task_name: ClassVar[str] = "MILL_TRENCH"
+    task_type: ClassVar[str] = "MILL_TRENCH"
     display_name: ClassVar[str] = "Trench Milling"
 
 
@@ -101,7 +101,7 @@ class MillUndercutTaskConfig(AutoLamellaTaskConfig):
     """Configuration for the MillUndercutTask."""
     orientation: str = "SEM"
     milling_angles: List[float] = field(default_factory=lambda: [25, 20])  # in degrees
-    task_name: ClassVar[str] = "MILL_UNDERCUT"
+    task_type: ClassVar[str] = "MILL_UNDERCUT"
     display_name: ClassVar[str] = "Undercut Milling"
 
 
@@ -110,7 +110,7 @@ class SetupLamellaTaskConfig(AutoLamellaTaskConfig):
     """Configuration for the SetupLamellaTask."""
     milling_angle: float = 15 # in degrees
     use_fiducial: bool = True
-    task_name: ClassVar[str] = "SETUP_LAMELLA"
+    task_type: ClassVar[str] = "SETUP_LAMELLA"
     display_name: ClassVar[str] = "Setup Lamella"
 
 
@@ -118,7 +118,7 @@ class SetupLamellaTaskConfig(AutoLamellaTaskConfig):
 class MillRoughTaskConfig(AutoLamellaTaskConfig):
     """Configuration for the MillRoughTask."""
     acquire_reference_images: bool = True
-    task_name: ClassVar[str] = "MILL_ROUGH"
+    task_type: ClassVar[str] = "MILL_ROUGH"
     display_name: ClassVar[str] = "Rough Milling"
 
 
@@ -126,14 +126,14 @@ class MillRoughTaskConfig(AutoLamellaTaskConfig):
 class MillPolishingTaskConfig(AutoLamellaTaskConfig):
     """Configuration for the MillPolishingTask."""
     acquire_reference_images: bool = True
-    task_name: ClassVar[str] = "MILL_POLISHING"
+    task_type: ClassVar[str] = "MILL_POLISHING"
     display_name: ClassVar[str] = "Polishing"
 
 
 @dataclass
 class SpotBurnFiducialTaskConfig(AutoLamellaTaskConfig):
     """Configuration for the SpotBurnFiducialTask."""
-    task_name: ClassVar[str] = "SPOT_BURN_FIDUCIAL"
+    task_type: ClassVar[str] = "SPOT_BURN_FIDUCIAL"
     display_name: ClassVar[str] = "Spot Burn Fiducial"
     milling_current: float = field(
         default=60.0e-12,  # in Amperes
@@ -171,13 +171,18 @@ class AutoLamellaTask(ABC):
         self.task_id = str(uuid.uuid4())
 
     @property
+    def task_type(self) -> str:
+        """Return the type of the task."""
+        return self.config.task_type
+
+    @property
     def task_name(self) -> str:
         """Return the name of the task."""
         return self.config.task_name
 
     @property
     def display_name(self) -> str:
-        """Return the display name of the task."""
+        """Return the display name of the task type."""
         return self.config.display_name
 
     def run(self) -> None:
@@ -190,7 +195,7 @@ class AutoLamellaTask(ABC):
         pass
 
     def pre_task(self) -> None:
-        logging.info(f"Running {self.task_name} ({self.task_id}) for {self.lamella.name} ({self.lamella._id})")
+        logging.info(f"Running {self.task_name}, {self.task_type} ({self.task_id}) for {self.lamella.name} ({self.lamella._id})")
 
         # pre-task
         self.lamella.task.name = self.task_name
@@ -215,8 +220,9 @@ class AutoLamellaTask(ABC):
                        "lamella": self.lamella.name,
                        "lamella_id": self.lamella._id,
                        "task_id": self.task_id,
-                       "task": self.task_name, 
-                       "step": message})
+                       "task_type": self.task_type,
+                       "task_name": self.task_name, 
+                       "task_step": message})
         if self.lamella.task is not None:
             self.lamella.task.step = message
 
@@ -618,7 +624,7 @@ class SpotBurnFiducialTask(AutoLamellaTask):
         sem_image, fib_image = acquire.take_reference_images(self.microscope, image_settings)
         set_images_ui(self.parent_ui, sem_image, fib_image)
 
-# TODO: we need to split this into select position and setup lamell tasks:
+# TODO: we need to split this into select position and setup lamella tasks:
 # select position: move to milling angle, correct coincidence, acquire base image
 # setup lamella: mill fiducial, acquire alignment image, set alignment area
 # then allow the user to modify the other patterns (rough mill, polishing) asynchronously in gui
@@ -665,8 +671,15 @@ class SetupLamellaTask(AutoLamellaTask):
 
         self.log_status_message("SETUP_PATTERNS")
 
-        rough_milling_task_config = self.lamella.task_config[MillRoughTaskConfig.task_name].milling[MILL_ROUGH_KEY]
-        polishing_milling_task_config = self.lamella.task_config[MillPolishingTaskConfig.task_name].milling[MILL_POLISHING_KEY]
+        # find MILL_ROUGH and MILL_POLISHING task configs
+        try:
+            for task_name, task_config in self.lamella.task_config.items():
+                if task_config.task_type == MillRoughTaskConfig.task_type:
+                    rough_milling_task_config = task_config.milling[MILL_ROUGH_KEY]
+                elif task_config.task_type == MillPolishingTaskConfig.task_type:
+                    polishing_milling_task_config = task_config.milling[MILL_POLISHING_KEY]
+        except Exception as e:
+            raise ValueError(f"Error finding MillRoughTaskConfig or MillPolishingTaskConfig in lamella task config: {e}")
         fiducial_task_config = self.config.milling[FIDUCIAL_KEY]
 
         assert np.isclose(rough_milling_task_config.field_of_view, polishing_milling_task_config.field_of_view, atol=1e-6), \
@@ -733,6 +746,7 @@ class SetupLamellaTask(AutoLamellaTask):
         )
         set_images_ui(self.parent_ui, reference_images.high_res_eb, reference_images.high_res_ib)
 
+        self.lamella.milling_angle = self.microscope.get_current_milling_angle()
         self.lamella.milling_pose = self.microscope.get_microscope_state()
 
 
@@ -752,45 +766,47 @@ def get_task_supervision(task_name: str,
 
 class TaskNotRegisteredError(Exception):
     """Exception raised when a task is not registered in the TASK_REGISTRY."""
-    def __init__(self, task_name: str):
-        super().__init__(f"Task '{task_name}' is not registered in the TASK_REGISTRY.")
-        self.task_name = task_name
+    def __init__(self, task_type: str):
+        super().__init__(f"Task '{task_type}' is not registered in the TASK_REGISTRY.")
+        self.task_type = task_type
 
     def __str__(self) -> str:
-        return f"TaskNotRegisteredError: {self.task_name}"
+        return f"TaskNotRegisteredError: {self.task_type}"
 
 
 def load_task_config(ddict: Dict[str, Any]) -> Dict[str, AutoLamellaTaskConfig]:
     """Load task configurations from a dictionary."""
     task_config = {}
     for name, v in ddict.items():
-        if name not in TASK_REGISTRY:
+        task_type = v.get("task_type")
+        if task_type not in TASK_REGISTRY:
             # raise ValueError(f"Task '{name}' is not registered.")
             logging.warning(f"Task '{name}' is not registered. Skipping.")
             continue
-        config_class = TASK_REGISTRY[name].config_cls
+        config_class = TASK_REGISTRY[task_type].config_cls
         task_config[name] = config_class.from_dict(v)
+        task_config[name].task_name = name
     return task_config
 
-def load_config(task_name: str, ddict: Dict[str, Any]) -> AutoLamellaTaskConfig:
+def load_config(task_type: str, ddict: Dict[str, Any]) -> AutoLamellaTaskConfig:
     """Load a task configuration from a dictionary."""
-    config_class = get_task_config(name=task_name)
+    config_class = get_task_config(task_type=task_type)
     return config_class.from_dict(ddict)
 
-def get_task_config(name: str) -> Type[AutoLamellaTaskConfig]:
+def get_task_config(task_type: str) -> Type[AutoLamellaTaskConfig]:
     """Get the task configuration by name."""
-    if name not in TASK_REGISTRY:
-        raise TaskNotRegisteredError(name)
-    return TASK_REGISTRY[name].config_cls  # type: ignore
+    if task_type not in TASK_REGISTRY:
+        raise TaskNotRegisteredError(task_type)
+    return TASK_REGISTRY[task_type].config_cls  # type: ignore
 
 
 TASK_REGISTRY: Dict[str, Type[AutoLamellaTask]] = {
-    MillTrenchTaskConfig.task_name: MillTrenchTask,
-    MillUndercutTaskConfig.task_name: MillUndercutTask,
-    MillRoughTaskConfig.task_name: MillRoughTask,
-    MillPolishingTaskConfig.task_name: MillPolishingTask,
-    SpotBurnFiducialTaskConfig.task_name: SpotBurnFiducialTask,
-    SetupLamellaTaskConfig.task_name: SetupLamellaTask,
+    MillTrenchTaskConfig.task_type: MillTrenchTask,
+    MillUndercutTaskConfig.task_type: MillUndercutTask,
+    MillRoughTaskConfig.task_type: MillRoughTask,
+    MillPolishingTaskConfig.task_type: MillPolishingTask,
+    SpotBurnFiducialTaskConfig.task_type: SpotBurnFiducialTask,
+    SetupLamellaTaskConfig.task_type: SetupLamellaTask,
     # Add other tasks here as needed
 }
 
@@ -799,13 +815,14 @@ def run_task(microscope: FibsemMicroscope,
           lamella: 'Lamella', 
           parent_ui: Optional[AutoLamellaUI] = None) -> None:
     """Run a specific AutoLamella task."""
-    task_cls = TASK_REGISTRY.get(task_name)
-    if task_cls is None:
-        raise ValueError(f"Task {task_name} is not registered.")
 
     task_config = lamella.task_config.get(task_name)
     if task_config is None:
         raise ValueError(f"Task configuration for {task_name} not found in lamella tasks.")
+
+    task_cls = TASK_REGISTRY.get(task_config.task_type)
+    if task_cls is None:
+        raise ValueError(f"Task {task_config.task_type} is not registered.")
 
     task = task_cls(microscope=microscope,
                     config=task_config,
@@ -861,7 +878,7 @@ def run_tasks(microscope: FibsemMicroscope,
         for lamella in experiment.positions:
             # Sync config updates from GUI before processing this lamella
             lamella = sync_lamella_config_updates(lamella, parent_ui)
-            
+
             if required_lamella and lamella.name not in required_lamella:
                 logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Not in required lamella list.")
                 continue

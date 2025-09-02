@@ -173,9 +173,9 @@ class AutoLamellaTaskState:
 @dataclass
 class AutoLamellaTaskConfig(ABC):
     """Configuration for AutoLamella tasks."""
-    task_name: ClassVar[str]
+    task_type: ClassVar[str]
     display_name: ClassVar[str]
-    unique_name: str = "NULL" # unique name for identifying in multi-task workflows
+    task_name: str = "NULL" # unique name for identifying in multi-task workflows
     imaging: ImageSettings = field(default_factory=ImageSettings)
     milling: Dict[str, FibsemMillingTaskConfig] = field(default_factory=dict)
 
@@ -190,12 +190,13 @@ class AutoLamellaTaskConfig(ABC):
     def to_dict(self) -> dict:
         """Convert configuration to a dictionary."""
         ddict = {}
-        ddict["milling"] = {k: v.to_dict() for k, v in self.milling.items()}
+        ddict["task_type"] = self.task_type
         # TODO: explicitly not saving imaging until implemented
         # extract all the .parameters into a "parameters subdict"
         ddict["parameters"] = {}
         for k in self.parameters:
             ddict["parameters"][k] = getattr(self, k)
+        ddict["milling"] = {k: v.to_dict() for k, v in self.milling.items()}
         return ddict
 
     @classmethod
@@ -238,7 +239,7 @@ class AutoLamellaTaskDescription:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AutoLamellaTaskDescription':
         if data is None:
-            return cls(name="", supervise=False, required=False, requires=[])
+            return cls(name="", task_type="", supervise=False, required=False, requires=[])
         return cls(**data)
 
 @evented
