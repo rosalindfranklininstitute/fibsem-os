@@ -198,21 +198,21 @@ class AutoLamellaTask(ABC):
         logging.info(f"Running {self.task_name}, {self.task_type} ({self.task_id}) for {self.lamella.name} ({self.lamella._id})")
 
         # pre-task
-        self.lamella.task.name = self.task_name
-        self.lamella.task.start_timestamp = datetime.timestamp(datetime.now())
-        self.lamella.task.task_id = self.task_id
+        self.lamella.task_state.name = self.task_name
+        self.lamella.task_state.start_timestamp = datetime.timestamp(datetime.now())
+        self.lamella.task_state.task_id = self.task_id
         self.log_status_message("STARTED")
 
     def post_task(self) -> None:
         # post-task
-        if self.lamella.task is None:
+        if self.lamella.task_state is None:
             raise ValueError("Task state is not set. Did you run pre_task()?")
         self.lamella.state.microscope_state = self.microscope.get_microscope_state()
-        self.lamella.task.end_timestamp = datetime.timestamp(datetime.now())
+        self.lamella.task_state.end_timestamp = datetime.timestamp(datetime.now())
         self.log_status_message("FINISHED")
         self.update_status_ui("Finished")
         self.lamella.task_config[self.task_name] = deepcopy(self.config)
-        self.lamella.task_history.append(deepcopy(self.lamella.task))
+        self.lamella.task_history.append(deepcopy(self.lamella.task_state))
 
     def log_status_message(self, message: str) -> None:
         logging.debug({"msg": "status", 
@@ -223,8 +223,8 @@ class AutoLamellaTask(ABC):
                        "task_type": self.task_type,
                        "task_name": self.task_name, 
                        "task_step": message})
-        if self.lamella.task is not None:
-            self.lamella.task.step = message
+        if self.lamella.task_state is not None:
+            self.lamella.task_state.step = message
 
     def update_status_ui(self, message: str) -> None:
         update_status_ui(self.parent_ui, f"{self.lamella.name} [{self.task_name}] {message}")

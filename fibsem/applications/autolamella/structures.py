@@ -128,10 +128,10 @@ class LamellaState:
 @evented
 @dataclass
 class AutoLamellaTaskState:
-    name: str = "NULL"
-    step: str = "NULL"
-    task_id: str = "NULL"
-    lamella_id: str = "NULL"
+    name: str = ""
+    step: str = ""
+    task_id: str = ""
+    lamella_id: str = ""
     start_timestamp: float = field(default_factory=lambda: datetime.timestamp(datetime.now()))
     end_timestamp: Optional[float] = None
 
@@ -175,7 +175,7 @@ class AutoLamellaTaskConfig(ABC):
     """Configuration for AutoLamella tasks."""
     task_type: ClassVar[str]
     display_name: ClassVar[str]
-    task_name: str = "NULL" # unique name for identifying in multi-task workflows
+    task_name: str = "" # unique name for identifying in multi-task workflows
     imaging: ImageSettings = field(default_factory=ImageSettings)
     milling: Dict[str, FibsemMillingTaskConfig] = field(default_factory=dict)
 
@@ -390,7 +390,7 @@ class Lamella:
     _id: str = str(uuid.uuid4())
     task_config: Dict[str, 'AutoLamellaTaskConfig'] = field(default_factory=dict)
     poses: Dict[str, MicroscopeState] = field(default_factory=dict)
-    task: AutoLamellaTaskState = field(default_factory=AutoLamellaTaskState)
+    task_state: AutoLamellaTaskState = field(default_factory=AutoLamellaTaskState)
     task_history: List['AutoLamellaTaskState'] = field(default_factory=list)
     defect: DefectState = field(default_factory=DefectState)
     milling_angle: Optional[float] = None
@@ -421,7 +421,7 @@ class Lamella:
         # TODO: add multiple positions for milling, landing, etc. 
         # rather than explicit states
         # self.positions: Dict[str, MicroscopeState] = {}
-        self.task.lamella_id = self._id
+        self.task_state.lamella_id = self._id
 
         # assign the imaging path to the task config
         for task_name, tc in self.task_config.items():
@@ -522,7 +522,7 @@ class Lamella:
             "states": {k.name: v.to_dict() for k, v in self.states.items()},
             "poses": {k: v.to_dict() for k, v in self.poses.items()},
             "task_config": {k: v.to_dict() for k, v in self.task_config.items()},
-            "task": self.task.to_dict() if self.task is not None else None,
+            "task_state": self.task_state.to_dict() if self.task_state is not None else None,
             "task_history": [task.to_dict() for task in self.task_history],
             "defect": self.defect.to_dict() if self.defect is not None else None,
             "milling_angle": self.milling_angle,
@@ -533,7 +533,7 @@ class Lamella:
         return f"Lamella {self.petname} [{self.status}]"
 
     @classmethod
-    def from_dict(cls, data):
+    def from_dict(cls, data: dict) -> 'Lamella':
         state = LamellaState.from_dict(data["state"])
 
         # backwards compatibility
@@ -591,7 +591,7 @@ class Lamella:
             states=states,
             poses = {k: MicroscopeState.from_dict(v) for k, v in data.get("poses", {}).items()},
             task_config=load_task_config(data.get("task_config", {})),
-            task=AutoLamellaTaskState.from_dict(data.get("task", {})),
+            task_state=AutoLamellaTaskState.from_dict(data.get("task_state", {})),
             task_history=[AutoLamellaTaskState.from_dict(task) for task in data.get("task_history", [])],
             defect=DefectState.from_dict(data.get("defect", {})),
             milling_angle=data.get("milling_angle", None),
