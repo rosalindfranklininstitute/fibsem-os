@@ -3,7 +3,7 @@ import json
 import os
 from copy import deepcopy
 from pathlib import Path
-from typing import Tuple
+from typing import Dict, Tuple
 
 import pandas as pd
 
@@ -302,3 +302,87 @@ def calculate_statistics_dataframe(path: Path, encoding: str = "cp1252"):
     df_milling.to_csv(filename, mode='w', header=True, index=False)
 
     return df_experiment, df_history, df_beam_shift, df_steps, df_stage, df_det, df_click, df_milling
+
+
+
+#### TASK REFACTORING ####
+
+def parse_logfile(path: str, encoding="utf-8") -> Dict[str, pd.DataFrame]:
+    """Updated parser for task based workflow"""
+
+    fname = os.path.join(path, "logfile.log")
+    steps_data = []
+    det_data = []
+    click_data = []
+    milling_data = []
+
+    stepd = None
+
+    print("-" * 80)
+    print(f"Parsing {fname}")
+    # encoding = "cp1252" if "nt" in os.name else "cp1252" # TODO: this depends on the OS it was logged on, usually windows, need to make this more robust.
+    with open(fname, encoding=encoding) as f:
+        # Note: need to check the encoding as this is required for em dash (long dash) # TODO: change this delimiter so this isnt required.
+        lines = f.read().splitlines()
+        for i, line in enumerate(lines):
+
+            if line == "":
+                continue
+            try:
+
+                # get timestamp, function, and message from log line
+                tsd, func, msg = parse_line(line)
+
+                if "milling_task" in msg:
+                    msgd = parse_msg(msg)
+
+                    if stepd is None:
+                        continue
+
+                    milld = stepd
+                    milld["timestamp"] = tsd
+                    milld["milling_task"] = msgd["task_name"]
+                    milld["milling_task_id"] = msgd["task_id"]
+                    milld["milling_stage"] = msgd["stage"]["name"]
+                    milld["start_timestamp"] = msgd["start_time"]
+                    milld["end_timestamp"] = msgd["end_time"]
+                    milld["duration"] = msgd["end_time"] - msgd["start_time"]
+                    milld["milling_current"] = msgd["stage"]["milling"]["milling_current"]
+                    milld["milling_voltage"] = msgd["stage"]["milling"]["milling_voltage"]
+                    milld["depth"] = msgd["stage"]["pattern"].get("depth", 0)
+                    milling_data.append(deepcopy(milld))
+
+                if "log_status_message" in func:
+                    # global data
+                    msgd = parse_msg(msg)
+                    stepd = {
+                        "timestamp": tsd,
+                        "lamella": msgd["lamella"],
+                        "lamella_id": msgd["lamella_id"],
+                        "task_name": msgd["task_name"],
+                        "task_id": msgd["task_id"],
+                        "task_type": msgd["task_type"],
+                        "task_step": msgd["task_step"],
+                    }
+                    steps_data.append(deepcopy(stepd))
+
+            except Exception as e:
+                pass
+
+    df_tasks = pd.DataFrame(steps_data)
+    df_tasks["duration"] = df_tasks["timestamp"].diff().shift(-1)
+    df_tasks.fillna(0, inplace=True)
+
+    df_milling = pd.DataFrame(milling_data)
+
+    from fibsem.applications.autolamella.structures import AutoLamellaTaskProtocol
+    exp = Experiment.load(os.path.join(path, "experiment.yaml"))
+    exp.task_protocol = AutoLamellaTaskProtocol.load(os.path.join(path, "protocol.yaml"))
+    df_task_history = exp.task_history_dataframe()
+
+    df_exp = exp.experiment_summary_dataframe()
+
+    return {"experiment": df_exp, 
+            "tasks": df_tasks, 
+            "milling": df_milling, 
+            "task_history": df_task_history}
