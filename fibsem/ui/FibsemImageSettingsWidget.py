@@ -855,6 +855,7 @@ class FibsemImageSettingsWidget(ImageSettingsWidgetUI.Ui_Form, QtWidgets.QWidget
 
     def clear_alignment_area(self):
         """Hide the alignment area layer"""
+        self.alignment_layer.mode = "pan_zoom"
         self.alignment_layer.visible = False
         self.restore_active_layer_for_movement()
 
@@ -893,6 +894,7 @@ class FibsemImageSettingsWidget(ImageSettingsWidgetUI.Ui_Form, QtWidgets.QWidget
         if editable:
             self.viewer.layers.selection.active = self.alignment_layer
             self.alignment_layer.mode = "select"
+            self.alignment_layer.selected_data.clear()
         # TODO: prevent rotation of rectangles?
 
     def update_alignment(self, event):
