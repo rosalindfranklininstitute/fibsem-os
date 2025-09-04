@@ -300,10 +300,10 @@ if __name__ == "__main__":
     task_configs = {}
 
     task_configs["mill_rough"] = FibsemMillingTaskConfig.from_stages(
-        stages=exp.positions[0].milling_workflows["mill_rough"],  # type: ignore
+        stages=protocol.milling["mill_rough"], name="Rough Milling"  # type: ignore
     )
     task_configs["mill_polishing"] = FibsemMillingTaskConfig.from_stages(
-        stages=exp.positions[0].milling_workflows["mill_polishing"],  # type: ignore
+        stages=protocol.milling["mill_polishing"], name="Polishing"  # type: ignore
     )
     # task_configs["stress-relief"] = FibsemMillingTaskConfig.from_stages(
     #     stages=exp.positions[1].milling_workflows["microexpansion"],  # type: ignore

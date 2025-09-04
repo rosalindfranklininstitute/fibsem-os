@@ -12,7 +12,7 @@ from fibsem import acquire
 from fibsem import config as fcfg
 from fibsem.microscope import FibsemMicroscope
 from fibsem.milling.base import FibsemMillingStage
-from fibsem.structures import BeamType, FibsemImage, ImageSettings, MillingAlignment
+from fibsem.structures import BeamType, FibsemImage, ImageSettings, MillingAlignment, Point
 from fibsem.utils import current_timestamp_v3
 
 if TYPE_CHECKING:
@@ -84,7 +84,7 @@ class FibsemMillingTaskConfig:
         # Use the first stage's properties as defaults
         first_stage = stages[0]
         return FibsemMillingTaskConfig(
-            name=first_stage.name,
+            name=name,
             field_of_view=first_stage.milling.hfw,
             channel=first_stage.milling.milling_channel,
             alignment=first_stage.alignment,
@@ -113,6 +113,7 @@ class FibsemMillingTask:
         self.microscope = microscope
         self.parent_ui = parent_ui
         self.task_id = str(uuid.uuid4())
+        self.initial_beam_shift: Optional[Point] = None
 
     @property
     def name(self) -> str:
@@ -141,7 +142,7 @@ class FibsemMillingTask:
                 self.microscope.milling_progress_signal.connect(self.parent_ui._on_milling_progress)
             else:
                 self.microscope.milling_progress_signal.connect(self._handle_progress)
-            initial_beam_shift = self.microscope.get_beam_shift(beam_type=self.config.channel)
+            self.initial_beam_shift = self.microscope.get_beam_shift(beam_type=self.config.channel)
 
             # acquire a reference image for alignment
             if self.config.alignment.enabled:
@@ -162,8 +163,8 @@ class FibsemMillingTask:
                 imaging_voltage=self.microscope.system.ion.beam.voltage,
             )
             # restore initial beam shift
-            if initial_beam_shift:
-                self.microscope.set_beam_shift(initial_beam_shift, beam_type=self.config.channel)
+            if self.initial_beam_shift is not None:
+                self.microscope.set_beam_shift(self.initial_beam_shift, beam_type=self.config.channel)
             if self.parent_ui:
                 self.microscope.milling_progress_signal.disconnect(self.parent_ui._on_milling_progress)
 
@@ -240,7 +241,7 @@ class FibsemMillingTask:
             save=True,
             path=path,
             filename=filename,
-        )
+        ) # TODO: support customising alignment imaging parameters?
         self.reference_image =  acquire.acquire_image(microscope=self.microscope, settings=image_settings)
 
     def _acquire_milling_task_images(

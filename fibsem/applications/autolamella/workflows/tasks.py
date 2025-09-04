@@ -25,7 +25,7 @@ from typing import (
 
 import numpy as np
 
-from fibsem import acquire, alignment, calibration
+from fibsem import acquire, alignment, calibration, constants
 from fibsem import config as fcfg
 from fibsem.applications.autolamella.protocol.validation import (
     DEFAULT_ALIGNMENT_AREA,
@@ -108,8 +108,25 @@ class MillUndercutTaskConfig(AutoLamellaTaskConfig):
 @dataclass
 class SetupLamellaTaskConfig(AutoLamellaTaskConfig):
     """Configuration for the SetupLamellaTask."""
-    milling_angle: float = 15 # in degrees
-    use_fiducial: bool = True
+
+    milling_angle: float = field(
+        default=15,
+        metadata={
+            "help": "The angle between the FIB and sample used for milling",
+            "units": constants.DEGREE_SYMBOL,
+        },
+    )
+    use_fiducial: bool = field(
+        default=True,
+        metadata={"help": "Whether to mill a fiducial marker for alignment"},
+    )
+    alignment_expansion: float = field(
+        default=30,
+        metadata={
+            "help": "The percentage to expand the alignment area around the fiducial",
+            "units": "%",
+        },
+    )
     task_type: ClassVar[str] = "SETUP_LAMELLA"
     display_name: ClassVar[str] = "Setup Lamella"
 
@@ -708,7 +725,7 @@ class SetupLamellaTask(AutoLamellaTask):
             # get alignment area based on fiducial bounding box
             self.lamella.alignment_area = get_pattern_reduced_area(stage=milling_task.config.stages[0],
                                                             image=FibsemImage.generate_blank_image(hfw=alignment_hfw),
-                                                            expand_percent=30)
+                                                            expand_percent=self.config.alignment_expansion)
         else:
             # non-fiducial based alignment
             self.lamella.alignment_area = FibsemRectangle.from_dict(DEFAULT_ALIGNMENT_AREA)

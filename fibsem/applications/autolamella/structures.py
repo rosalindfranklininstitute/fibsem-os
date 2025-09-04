@@ -819,11 +819,10 @@ class Experiment:
 
         # read and open existing yaml file
         path = Path(fname).with_suffix(".yaml")
-        if os.path.exists(path):
-            with open(path, "r") as f:
-                ddict = yaml.safe_load(f)
-        else:
+        if not os.path.exists(path):
             raise FileNotFoundError(f"No file with name {path} found.")
+        with open(path, "r") as f:
+            ddict = yaml.safe_load(f)
 
         # create experiment from dict
         experiment = Experiment.from_dict(ddict)
