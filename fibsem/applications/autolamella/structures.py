@@ -13,6 +13,7 @@ import pandas as pd
 import petname
 import yaml
 from psygnal import evented
+from psygnal.containers import EventedList
 
 from fibsem.applications.autolamella import config as cfg
 from fibsem.applications.autolamella.protocol.validation import (
@@ -64,7 +65,7 @@ class LamellaState:
     microscope_state: MicroscopeState = field(default_factory=MicroscopeState)
     stage: AutoLamellaStage = AutoLamellaStage.Created
     start_timestamp: float = datetime.timestamp(datetime.now())
-    end_timestamp: float = None
+    end_timestamp: Optional[float] = None
 
     @property
     def completed(self) -> str:
@@ -131,6 +132,7 @@ class AutoLamellaTaskState:
     name: str = ""
     step: str = ""
     task_id: str = ""
+    task_type: str = ""
     lamella_id: str = ""
     start_timestamp: float = field(default_factory=lambda: datetime.timestamp(datetime.now()))
     end_timestamp: Optional[float] = None
@@ -181,10 +183,11 @@ class AutoLamellaTaskConfig(ABC):
 
     @property
     def parameters(self) -> Tuple[str, ...]:
+        core_params = [f.name for f in fields(AutoLamellaTaskConfig)]
         return tuple(
             f.name
             for f in fields(self)
-            if f not in fields(AutoLamellaTaskConfig)
+            if f.name not in core_params
         )
 
     def to_dict(self) -> dict:
@@ -197,6 +200,7 @@ class AutoLamellaTaskConfig(ABC):
         for k in self.parameters:
             ddict["parameters"][k] = getattr(self, k)
         ddict["milling"] = {k: v.to_dict() for k, v in self.milling.items()}
+        ddict["imaging"] = self.imaging.to_dict()
         return ddict
 
     @classmethod
@@ -216,8 +220,8 @@ class AutoLamellaTaskConfig(ABC):
                     # QUERY: should we raise an error here or just ignore unknown parameters?
                     raise ValueError(f"Unknown parameter '{key}' in task configuration.")
 
-        # if "imaging" in ddict:
-            # kwargs["imaging"] = ImageSettings.from_dict(ddict["imaging"])
+        if "imaging" in ddict:
+            kwargs["imaging"] = ImageSettings.from_dict(ddict["imaging"])
         if "milling" in ddict:
             kwargs["milling"] = {
                 k: FibsemMillingTaskConfig.from_dict(v) for k, v in ddict["milling"].items()
@@ -387,12 +391,13 @@ class Lamella:
     history: List[LamellaState] = field(default_factory=list)                                      # TODO: deprecate, use task_history instead
     milling_workflows: Dict[str, List[FibsemMillingStage]] = field(default_factory=dict)           # TODO: deprecate, use task_config instead
     states: Dict[AutoLamellaStage, LamellaState] = field(default_factory=dict)                     # TODO: deprecate, use task_history instead
-    _id: str = str(uuid.uuid4())
+    _id: str = field(default_factory=lambda: str(uuid.uuid4()))
     task_config: Dict[str, 'AutoLamellaTaskConfig'] = field(default_factory=dict)
     poses: Dict[str, MicroscopeState] = field(default_factory=dict)
     task_state: AutoLamellaTaskState = field(default_factory=AutoLamellaTaskState)
     task_history: List['AutoLamellaTaskState'] = field(default_factory=list)
     defect: DefectState = field(default_factory=DefectState)
+    objective_position: Optional[float] = None  # TODO: deprecate, use poses instead
     milling_angle: Optional[float] = None
 
     def __post_init__(self):
@@ -410,17 +415,10 @@ class Lamella:
                 if stage.get("imaging", {}).get("path", None) is None:
                     stage["imaging"]["path"] = self.path
 
-        if self.history is None:
-            self.history = []
         if self.milling_workflows is None:
             self.milling_workflows = {k: get_milling_stages(k, self.protocol) for k in self.protocol}
-        if self.states is None:
-            self.states = {}
         if self._id is None:
             self._id = str(uuid.uuid4())
-        # TODO: add multiple positions for milling, landing, etc. 
-        # rather than explicit states
-        # self.positions: Dict[str, MicroscopeState] = {}
         self.task_state.lamella_id = self._id
 
         # assign the imaging path to the task config
@@ -439,7 +437,7 @@ class Lamella:
     @property
     def name(self) -> str:
         return self.petname
-    
+
     @name.setter
     def name(self, value: str):
         self.petname = value
@@ -447,7 +445,7 @@ class Lamella:
     @property
     def status(self) -> str:
         return self.state.stage.name
-    
+
     @property
     def workflow(self) -> AutoLamellaStage:
         return self.state.stage
@@ -459,10 +457,14 @@ class Lamella:
     @property
     def is_active(self) -> bool:
         return not self.finished and not self.is_failure
-    
+
     @property
     def stage_position(self) -> FibsemStagePosition:
-        return self.state.microscope_state.stage_position
+        return self.state.microscope_state.stage_position # type: ignore
+
+    @stage_position.setter
+    def stage_position(self, value: FibsemStagePosition):
+        self.state.microscope_state.stage_position = value
 
     def has_completed_task(self, task_name: str) -> bool:
         """Check if the lamella has completed a specific task."""
@@ -525,12 +527,23 @@ class Lamella:
             "task_state": self.task_state.to_dict() if self.task_state is not None else None,
             "task_history": [task.to_dict() for task in self.task_history],
             "defect": self.defect.to_dict() if self.defect is not None else None,
+            "objective_position": self.objective_position,
             "milling_angle": self.milling_angle,
         }
 
     @property
     def info(self):
         return f"Lamella {self.petname} [{self.status}]"
+
+    @property
+    def pretty_fm_name(self) -> str:
+        """Generate a pretty name for the stage position."""
+        if self.objective_position is None:
+            objective_str = "N/A"
+        else:
+            objective_str = f"{self.objective_position * 1e3:.3f}mm"
+
+        return f"{self.name} ({self.stage_position.x * 1e6:.1f}μm, {self.stage_position.y * 1e6:.1f}μm, {objective_str})"
 
     @classmethod
     def from_dict(cls, data: dict) -> 'Lamella':
@@ -542,7 +555,7 @@ class Lamella:
             alignment_area = FibsemRectangle.from_dict(alignment_area_ddict)
         else:
             alignment_area = FibsemRectangle() # use default
-        
+
         history=[LamellaState().from_dict(state) for state in data["history"]]
 
         # load states:
@@ -594,6 +607,7 @@ class Lamella:
             task_state=AutoLamellaTaskState.from_dict(data.get("task_state", {})),
             task_history=[AutoLamellaTaskState.from_dict(task) for task in data.get("task_history", [])],
             defect=DefectState.from_dict(data.get("defect", {})),
+            objective_position=data.get("objective_position", None),
             milling_angle=data.get("milling_angle", None),
         )
 
@@ -636,7 +650,7 @@ def create_new_lamella(experiment_path: str, number: int, state: LamellaState, p
     if name is None:
         name = f"{number:02d}-{petname.generate(2)}"
     path = os.path.join(experiment_path, name)
-    
+
     # create the lamella
     lamella = Lamella(
         petname=name,
@@ -672,7 +686,16 @@ def create_new_experiment(path: Path, name: str, method: str = "autolamella-on-g
 
 @evented
 @dataclass
-class Experiment: 
+class Experiment:
+    name: str
+    _id: str
+    path: Path
+    positions: EventedList[Lamella] = field(default_factory=EventedList)
+    landing_positions: List[FibsemStagePosition] = field(default_factory=list)
+    created_at: float = field(default_factory=lambda: datetime.timestamp(datetime.now()))
+    method: 'AutoLamellaMethod' = field(default_factory=lambda: get_autolamella_method("autolamella-on-grid"))
+    task_protocol: 'AutoLamellaTaskProtocol' = field(default_factory=lambda: AutoLamellaTaskProtocol())
+
     def __init__(self, path: Path, 
                  name: str = cfg.EXPERIMENT_NAME, 
                  method: str = "autolamella-on-grid") -> None:
@@ -682,11 +705,10 @@ class Experiment:
         self.path: Path = os.path.join(path, name)
         self.created_at: float = datetime.timestamp(datetime.now())
 
-        self.positions: List[Lamella] = []
+        self.positions: EventedList[Lamella] = EventedList()
         self.landing_positions: List[FibsemStagePosition] = []
 
         self.method: AutoLamellaMethod = get_autolamella_method(method)
-        self.task_protocol: AutoLamellaTaskProtocol
 
     def to_dict(self) -> dict:
 
@@ -1038,6 +1060,7 @@ class Experiment:
                     "lamella_id": task.lamella_id,
                     "task_name": task.name,
                     "task_id": task.task_id,
+                    "task_type": task.task_type,
                     "start_timestamp": task.start_timestamp,
                     "end_timestamp": task.end_timestamp,
                     "duration": task.duration,

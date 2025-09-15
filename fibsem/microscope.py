@@ -135,6 +135,9 @@ class FibsemMicroscope(ABC):
 
     fm: 'FluorescenceMicroscope' = None # type: ignore
 
+    stage_position_changed = Signal(FibsemStagePosition)
+    _stage_position: FibsemStagePosition = None # type: ignore
+
     @abstractmethod
     def connect_to_microscope(self, ip_address: str, port: int) -> None:
         pass
@@ -225,6 +228,11 @@ class FibsemMicroscope(ABC):
 
         stage_position = self.get("stage_position")
         logging.debug({"msg": "get_stage_position", "pos": stage_position.to_dict()})
+
+        if self._stage_position != stage_position:
+            self._stage_position = deepcopy(stage_position)
+            self.stage_position_changed.emit(self._stage_position)
+
         return deepcopy(stage_position)
 
     @abstractmethod
@@ -275,6 +283,7 @@ class FibsemMicroscope(ABC):
         # compustage is tilted by 180 degrees for flat to beam, because we image the backside fo the grid,
         # therefore, we need to offset the tilt by 180 degrees
         if self.stage_is_compustage and beam_type is BeamType.ION:
+            rotation = 0
             tilt = -np.pi + tilt
             
         # updated safe rotation move
@@ -342,6 +351,10 @@ class FibsemMicroscope(ABC):
         pass
 
     def finish_milling2(self):
+        pass
+
+    @abstractmethod
+    def clear_patterns(self) -> None:
         pass
 
     @abstractmethod
@@ -945,6 +958,10 @@ class FibsemMicroscope(ABC):
         """Get the compucentric rotation position for the given stage position. 
         Assumes 180deg rotation. TFS only"""
 
+        # compustage does not support compucentric rotation
+        if self.stage_is_compustage:
+            return position
+
         # get the compucentric rotation offset
         offset = self._get_compucentric_rotation_offset()
 
@@ -1071,6 +1088,26 @@ class FibsemMicroscope(ABC):
         current_milling_angle = self.get_current_milling_angle() # degrees
 
         return bool(np.isclose(current_milling_angle, milling_angle, atol=atol))
+
+    def move_to_milling_angle(self,milling_angle: float, rotation: Optional[float] = None) -> bool:
+        """Move the stage to the milling angle, based on the current pretilt and column tilt.
+        Args:
+            milling_angle (float): The target milling angle in degrees.
+            rotation (Optional[float]): The target rotation angle in radians. If None, uses the current rotation reference.
+        Returns:
+            bool: True if the stage is close to the target milling angle after the move, False otherwise.
+        """
+
+        if rotation is None:
+            rotation = np.radians(self.system.stage.rotation_reference)
+
+        from fibsem.transformations import get_stage_tilt_from_milling_angle
+        # calculate the stage tilt from the milling angle
+        stage_tilt = get_stage_tilt_from_milling_angle(self, milling_angle)
+        stage_position = FibsemStagePosition(t=stage_tilt, r=rotation)
+        self.safe_absolute_stage_movement(stage_position)
+
+        return self.is_close_to_milling_angle(milling_angle)
 
     @property
     def current_grid(self) -> str:

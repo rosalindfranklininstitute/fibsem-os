@@ -1,3 +1,4 @@
+import copy
 import logging
 from typing import List, Optional
 
@@ -240,7 +241,7 @@ def run_spot_burn_workflow(microscope: FibsemMicroscope,
         logging.info(f"Running spot burn workflow for {position.name}")
 
         # move to the target position at the FIB orientation
-        stage_position = position.state.microscope_state.stage_position
+        stage_position = copy.deepcopy(position.state.microscope_state.stage_position) # TODO: need to do this to prevent updating the original position
         target_position = microscope.get_target_position(stage_position=stage_position,
                                                          target_orientation="FIB")
         microscope.safe_absolute_stage_movement(target_position)

@@ -21,6 +21,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    Literal,
 )
 
 import numpy as np
@@ -42,7 +43,6 @@ from fibsem.applications.autolamella.structures import (
     AutoLamellaTaskConfig,
     AutoLamellaTaskState,
 )
-from psygnal import Signal, evented
 
 from fibsem.applications.autolamella.ui import AutoLamellaUI
 from fibsem.applications.autolamella.workflows.core import (
@@ -55,7 +55,6 @@ from fibsem.applications.autolamella.workflows.core import (
     update_status_ui,
     ask_user,
 )
-from fibsem.constants import DEGREE_SYMBOL
 from fibsem.detection.detection import (
     Feature,
     LamellaBottomEdge,
@@ -120,7 +119,7 @@ class SetupLamellaTaskConfig(AutoLamellaTaskConfig):
         default=True,
         metadata={"help": "Whether to mill a fiducial marker for alignment"},
     )
-    alignment_expansion: float = field(
+    alignment_expansion: int = field(
         default=30,
         metadata={
             "help": "The percentage to expand the alignment area around the fiducial",
@@ -168,7 +167,14 @@ class SpotBurnFiducialTaskConfig(AutoLamellaTaskConfig):
             'scale': 1
         }
     )
-    orientation: str = "FIB"
+    orientation: Literal["SEM", "FIB", "FM", None] = "FIB"
+
+@dataclass
+class AcquireReferenceImageConfig(AutoLamellaTaskConfig):
+    """Configuration for the AcquireReferenceImageTask."""
+    task_type: ClassVar[str] = "ACQUIRE_REFERENCE_IMAGE"
+    display_name: ClassVar[str] = "Acquire Reference Image"
+    beams: Literal["SEM", "FIB", "BOTH"] = "BOTH"
 
 
 class AutoLamellaTask(ABC):
@@ -218,7 +224,9 @@ class AutoLamellaTask(ABC):
         self.lamella.task_state.name = self.task_name
         self.lamella.task_state.start_timestamp = datetime.timestamp(datetime.now())
         self.lamella.task_state.task_id = self.task_id
+        self.lamella.task_state.task_type = self.task_type
         self.log_status_message("STARTED")
+        self.update_status_ui("Started", workflow_info=f"{self.lamella.name} [{self.display_name}]")
 
     def post_task(self) -> None:
         # post-task
@@ -243,8 +251,10 @@ class AutoLamellaTask(ABC):
         if self.lamella.task_state is not None:
             self.lamella.task_state.step = message
 
-    def update_status_ui(self, message: str) -> None:
-        update_status_ui(self.parent_ui, f"{self.lamella.name} [{self.task_name}] {message}")
+    def update_status_ui(self, message: str, workflow_info: Optional[str] = None) -> None:
+        update_status_ui(parent_ui=self.parent_ui, 
+                         msg=f"{self.lamella.name} [{self.task_name}] {message}", 
+                         workflow_info=workflow_info)
 
 
 class MillTrenchTask(AutoLamellaTask):
@@ -618,8 +628,11 @@ class SpotBurnFiducialTask(AutoLamellaTask):
         # move to the target position at the FIB orientation
         self.log_status_message("MOVE_TO_SPOT_BURN")
         stage_position = self.lamella.stage_position
-        target_position = self.microscope.get_target_position(stage_position=stage_position,
-                                                         target_orientation="FIB")
+        if self.config.orientation is None: # use current position
+            target_position = stage_position
+        else:
+            target_position = self.microscope.get_target_position(stage_position=stage_position,
+                                                         target_orientation=self.config.orientation)
         self.microscope.safe_absolute_stage_movement(target_position)
 
         # acquire images, set ui
@@ -671,11 +684,11 @@ class SetupLamellaTask(AutoLamellaTask):
         if not is_close and validate:
             current_milling_angle = self.microscope.get_current_milling_angle()
             ret = ask_user(parent_ui=self.parent_ui,
-                        msg=f"Tilt to specified milling angle ({milling_angle:.1f} {DEGREE_SYMBOL})? "
-                        f"Current milling angle is {current_milling_angle:.1f} {DEGREE_SYMBOL}.",
+                        msg=f"Tilt to specified milling angle ({milling_angle:.1f} {constants.DEGREE_SYMBOL})? "
+                        f"Current milling angle is {current_milling_angle:.1f} {constants.DEGREE_SYMBOL}.",
                         pos="Tilt", neg="Skip")
             if ret:
-                move_to_milling_angle(microscope=self.microscope, milling_angle=np.radians(milling_angle))
+                self.microscope.move_to_milling_angle(milling_angle=np.radians(milling_angle))
 
             # move_to_milling_angle(microscope=self.microscope, milling_angle=np.radians(milling_angle))
             # lamella = align_feature_coincident(microscope=microscope, 
@@ -767,6 +780,54 @@ class SetupLamellaTask(AutoLamellaTask):
         self.lamella.milling_pose = self.microscope.get_microscope_state()
 
 
+class AcquireReferenceImageTask(AutoLamellaTask):
+    """Task to acquire reference image with specified settings."""
+    config: AcquireReferenceImageConfig
+    config_cls: ClassVar[Type[AcquireReferenceImageConfig]] = AcquireReferenceImageConfig
+
+    def _run(self) -> None:
+        """Run the task to acquire reference image with the specified settings."""
+
+        # bookkeeping
+        validate = get_task_supervision(self.task_name)
+
+        # move to position
+        self.log_status_message("MOVE_TO_POSITION")
+        self.update_status_ui("Moving to Position...")
+        stage_position = self.lamella.stage_position
+        self.microscope.safe_absolute_stage_movement(stage_position)
+
+        import random, time
+        time.sleep(random.uniform(1, 5))
+        if validate:
+            ask_user(self.parent_ui, 
+                    msg=f"Acquire reference image for {self.lamella.name}. Press continue when ready.", 
+                    pos="Continue"
+                    )
+
+        # bookkeeping
+        image_settings = self.config.imaging
+        image_settings.path = self.lamella.path
+
+        self.log_status_message("ACQUIRE_REFERENCE_IMAGE")
+        self.update_status_ui("Acquiring Reference Image...")
+
+        # acquire reference images
+        image_settings.filename = "REF_REFERENCE_IMAGE"
+        image_settings.save = True
+        sem_image, fib_image = None, None
+        if self.config.beams == "BOTH":
+            sem_image, fib_image = acquire.take_reference_images(self.microscope, image_settings)
+        elif self.config.beams == "SEM":
+            image_settings.beam_type = BeamType.ELECTRON
+            sem_image = acquire.acquire_image(self.microscope, image_settings)
+        elif self.config.beams == "FIB":
+            image_settings.beam_type = BeamType.ION
+            fib_image = acquire.acquire_image(self.microscope, image_settings)
+        set_images_ui(self.parent_ui, sem_image, fib_image)
+        time.sleep(random.uniform(1, 5))
+
+
 def get_task_supervision(task_name: str, 
                     parent_ui: Optional['AutoLamellaUI'] = None) -> bool:
     """Get supervision status for a task."""
@@ -824,6 +885,7 @@ TASK_REGISTRY: Dict[str, Type[AutoLamellaTask]] = {
     MillPolishingTaskConfig.task_type: MillPolishingTask,
     SpotBurnFiducialTaskConfig.task_type: SpotBurnFiducialTask,
     SetupLamellaTaskConfig.task_type: SetupLamellaTask,
+    AcquireReferenceImageConfig.task_type: AcquireReferenceImageTask,
     # Add other tasks here as needed
 }
 
@@ -901,9 +963,9 @@ def run_tasks(microscope: FibsemMicroscope,
                 continue
 
             # check if this lamella has already completed the task
-            if lamella.has_completed_task(task_name):
-                logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Already completed.")
-                continue
+            # if lamella.has_completed_task(task_name): # TODO: need to handle re-running tasks
+                # logging.info(f"Skipping lamella {lamella.name} for task {task_name}. Already completed.")
+                # continue
 
             # check if this lamella has completed required tasks 
             task_requires = experiment.task_protocol.workflow_config.requires(task_name)
@@ -924,5 +986,8 @@ def run_tasks(microscope: FibsemMicroscope,
                      lamella=lamella,
                      parent_ui=parent_ui)
             experiment.save()
-    return experiment
 
+    update_status_ui(parent_ui, "", workflow_info="All tasks completed.")
+
+    print(experiment.task_history_dataframe())
+    return experiment
