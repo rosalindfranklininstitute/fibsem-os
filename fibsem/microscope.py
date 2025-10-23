@@ -120,6 +120,7 @@ from fibsem.structures import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from numpy.typing import NDArray
     from fibsem.structures import TFibsemPatternSettings
 
 class FibsemMicroscope(ABC):
