@@ -98,6 +98,22 @@ UNSCALED_VALUES = [
     "sem_frame_integration",
     "fib_frame_integration",
     "overtilt",
+    # Adaptive milling add unscaled keys
+    "gis_stop_um",
+    "max_crack_area_um2",
+    "max_milling_cycles",
+    "minimum_lamella_area_um2",
+    "maximum_drift_um",
+    "gis_filter_sigma",
+    "lamella_pad_x",
+    # Bitmap adaptive milling unscaled keys
+    "gis_max_um",
+    "gis_min_um",
+    "dwell_multiplier_mean_stop",
+    "dwell_multiplier_max_stop",
+    "bitmap_erosion_px",
+    "bitmap_gaussian_sigma",
+    "boundary_smoothing_sigma",
 ]
 LINE_KEYS = ["start_x", "start_y", "end_x", "end_y"]
 
