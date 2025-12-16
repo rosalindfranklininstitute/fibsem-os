@@ -74,6 +74,7 @@ class OvertiltTrenchMillingStrategy(MillingStrategy[OvertiltTrenchMillingConfig]
                                             ref_image=ref_image, 
                                             beam_type=stage.milling.milling_channel, 
                                             alignment_current=None,
+                                            use_autofocus=False,
                                             steps=3)
 
             # setup again to ensure we are milling at the correct current, cleared patterns

@@ -2094,13 +2094,17 @@ class MillingAlignment:
     enabled: bool = True
     interval_enabled: bool = False
     interval: int = 30 # seconds
+    autofocus: bool = False
     rect: FibsemRectangle = field(default_factory=lambda: FibsemRectangle.from_dict(DEFAULT_ALIGNMENT_AREA))
 
     def to_dict(self):
-        return {"enabled": self.enabled, 
-                "interval_enabled": self.interval_enabled, 
-                "interval": self.interval, 
-                "rect": self.rect.to_dict()}
+        return {
+            "enabled": self.enabled,
+            "interval_enabled": self.interval_enabled,
+            "interval": self.interval,
+            "autofocus": self.autofocus,
+            "rect": self.rect.to_dict(),
+        }
 
     @staticmethod
     def from_dict(d: dict) -> "MillingAlignment":
@@ -2108,5 +2112,6 @@ class MillingAlignment:
             enabled=d.get("enabled", False),
             interval_enabled=d.get("interval_enabled", False),
             interval=d.get("interval", 30),
-            rect=FibsemRectangle.from_dict(d.get("rect", DEFAULT_ALIGNMENT_AREA))
+            autofocus=d.get("autofocus", False),
+            rect=FibsemRectangle.from_dict(d.get("rect", DEFAULT_ALIGNMENT_AREA)),
         )

@@ -500,6 +500,7 @@ def multi_step_alignment_v2(
     alignment_current: Optional[float] = None,
     steps: int = 3,
     use_autocontrast: bool = False,
+    use_autofocus: bool = False,
     subsystem: Optional[str] = None,
     stop_event: Optional[ThreadingEvent] = None,
 ) -> None:
@@ -508,6 +509,12 @@ def multi_step_alignment_v2(
     if alignment_current is not None:
         initial_current = microscope.get("current", beam_type)
         microscope.set("current", alignment_current, beam_type)
+
+    if use_autofocus:
+        microscope.auto_focus(
+            beam_type=beam_type,
+            reduced_area=ref_image.metadata.image_settings.reduced_area,
+        )
 
     for i in range(steps):
         if stop_event is not None and stop_event.is_set():

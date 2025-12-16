@@ -91,6 +91,10 @@ class MillTrenchTaskConfig(AutoLamellaTaskConfig):
         default=False,  # whether to align to a trench reference image
         metadata={"help": "Whether to align to a trench reference image"},
     )
+    autofocus: bool = field(
+        default=False,
+        metadata={"help": "Whether to run autofocus on the alignment region"},
+    )
     charge_neutralisation: bool = field(
         default=True,  # whether to perform charge neutralisation
         metadata={"help": "Whether to perform charge neutralisation"},
@@ -146,6 +150,10 @@ class SetupLamellaTaskConfig(AutoLamellaTaskConfig):
         default=True,
         metadata={"help": "Whether to align to a reference image before milling the fiducial"},
     )
+    autofocus: bool = field(
+        default=False,
+        metadata={"help": "Whether to run autofocus on the alignment region"},
+    )
     alignment_expansion: float = field(
         default=30.0,
         metadata={
@@ -171,6 +179,10 @@ class MillRoughTaskConfig(AutoLamellaTaskConfig):
         default=True,
         metadata={"help": "Whether to acquire reference images"},
     )
+    autofocus: bool = field(
+        default=False,
+        metadata={"help": "Whether to run autofocus on the alignment region"},
+    )
     orientation: Literal["SEM", "FIB", "MILLING"] = field(
         default="MILLING",
         metadata={"help": "The orientation to perform rough milling in"},
@@ -192,6 +204,10 @@ class MillPolishingTaskConfig(AutoLamellaTaskConfig):
     acquire_reference_images: bool = field(
         default=True,
         metadata={"help": "Whether to acquire reference images"},
+    )
+    autofocus: bool = field(
+        default=False,
+        metadata={"help": "Whether to run autofocus on the alignment region"},
     )
     orientation: Literal["SEM", "FIB", "MILLING"] = field(
         default="MILLING",
@@ -472,17 +488,20 @@ class AutoLamellaTask(ABC):
         while self.parent_ui.WAITING_FOR_UI_UPDATE:
             time.sleep(0.5)
 
-    def _align_reference_image(self, filename: str):
+    def _align_reference_image(self, filename: str, autofocus: bool = False):
         """Align to a reference image."""
         # beam_shift alignment
         self.log_status_message("ALIGN_REFERENCE_IMAGE", "Aligning Reference Images...")
         ref_image = FibsemImage.load(os.path.join(self.lamella.path, filename))
-        alignment.multi_step_alignment_v2(microscope=self.microscope, 
-                                        ref_image=ref_image, 
-                                        beam_type=BeamType.ION, 
-                                        alignment_current=None,
-                                        steps=MAX_ALIGNMENT_ATTEMPTS,
-                                        stop_event=self._stop_event)
+        alignment.multi_step_alignment_v2(
+            microscope=self.microscope,
+            ref_image=ref_image,
+            beam_type=BeamType.ION,
+            alignment_current=None,
+            steps=MAX_ALIGNMENT_ATTEMPTS,
+            use_autofocus=autofocus,
+            stop_event=self._stop_event,
+        )
 
     def _acquire_reference_image(self, image_settings: ImageSettings, filename: Optional[str] = None) -> None:
         """Acquire a set of reference images."""
@@ -521,11 +540,15 @@ class MillTrenchTask(AutoLamellaTask):
         if os.path.exists(reference_image_path) and self.config.align_reference:
             self.log_status_message("ALIGN_TRENCH_REFERENCE", "Aligning Trench Reference...")
             ref_image = FibsemImage.load(reference_image_path)
-            alignment.multi_step_alignment_v2(microscope=self.microscope, 
-                                            ref_image=ref_image, 
-                                            beam_type=BeamType.ION, 
-                                            alignment_current=None,
-                                            steps=1, subsystem="stage")
+            alignment.multi_step_alignment_v2(
+                microscope=self.microscope,
+                ref_image=ref_image,
+                beam_type=BeamType.ION,
+                alignment_current=None,
+                use_autofocus=self.config.autofocus,
+                steps=1,
+                subsystem="stage",
+            )
 
         self.log_status_message("MILL_TRENCH", "Preparing to Mill Trench...")
 
@@ -696,7 +719,10 @@ class MillRoughTask(AutoLamellaTask):
         self.microscope.set_microscope_state(self.lamella.milling_pose)
 
         # beam_shift alignment
-        self._align_reference_image("ref_alignment_ib.tif")
+        self._align_reference_image(
+            "ref_alignment_ib.tif",
+            autofocus=self.config.autofocus,
+        )
 
         # take reference images
         self.log_status_message("ACQUIRE_REFERENCE_IMAGES", "Acquiring Reference Images...")
@@ -781,7 +807,10 @@ class MillPolishingTask(AutoLamellaTask):
         self.microscope.set_microscope_state(self.lamella.milling_pose)
 
         # beam_shift alignment
-        self._align_reference_image("ref_alignment_ib.tif")
+        self._align_reference_image(
+            "ref_alignment_ib.tif",
+            autofocus=self.config.autofocus,
+        )
 
         # reference images
         self.log_status_message("ACQUIRE_REFERENCE_IMAGES", "Acquiring Reference Images...")
@@ -877,10 +906,13 @@ class SetupLamellaTask(AutoLamellaTask):
             ref_image = FibsemImage.load(filenames[-1])
 
             # TODO: we should also check that the current position is close to the reference image to prevent bad alignments?
-            alignment.multi_step_alignment_v2(microscope=self.microscope, 
-                                            ref_image=ref_image, 
-                                            beam_type=BeamType.ION, 
-                                            steps=MAX_ALIGNMENT_ATTEMPTS)
+            alignment.multi_step_alignment_v2(
+                microscope=self.microscope,
+                ref_image=ref_image,
+                beam_type=BeamType.ION,
+                use_autofocus=self.config.autofocus,
+                steps=MAX_ALIGNMENT_ATTEMPTS,
+            )
 
         self.log_status_message("SELECT_POSITION", "Selecting Position...")
         milling_angle = self.config.milling_angle

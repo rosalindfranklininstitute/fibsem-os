@@ -126,11 +126,15 @@ def mill_trench(
         log_status_message(lamella, "ALIGN_TRENCH_REFERENCE")
         update_status_ui(parent_ui, f"{lamella.info} Aligning Trench Reference...")
         ref_image = FibsemImage.load(reference_image_path)
-        alignment.multi_step_alignment_v2(microscope=microscope, 
-                                        ref_image=ref_image, 
-                                        beam_type=BeamType.ION, 
-                                        alignment_current=None,
-                                        steps=1, subsystem="stage")
+        alignment.multi_step_alignment_v2(
+            microscope=microscope,
+            ref_image=ref_image,
+            beam_type=BeamType.ION,
+            alignment_current=None,
+            use_autofocus=protocol.tmp.get("autofocus_during_alignment", False),
+            steps=1,
+            subsystem="stage",
+        )
 
     log_status_message(lamella, "MILL_TRENCH")
 
@@ -379,11 +383,14 @@ def mill_lamella(
 
     # beam alignment
     #
-    alignment.multi_step_alignment_v2(microscope=microscope, 
-                                    ref_image=ref_image, 
-                                    beam_type=BeamType.ION, 
-                                    alignment_current=None,
-                                    steps=MAX_ALIGNMENT_ATTEMPTS)
+    alignment.multi_step_alignment_v2(
+        microscope=microscope,
+        ref_image=ref_image,
+        beam_type=BeamType.ION,
+        alignment_current=None,
+        use_autofocus=protocol.tmp.get("autofocus_during_alignment", False),
+        steps=MAX_ALIGNMENT_ATTEMPTS,
+    )
     #### 
 
     # take reference images
@@ -669,10 +676,13 @@ def setup_polishing(
 
     # beam shift alignment
     ref_image = FibsemImage.load(os.path.join(lamella.path, "ref_alignment_ib.tif"))
-    alignment.multi_step_alignment_v2(microscope=microscope, 
-                                    ref_image=ref_image,
-                                    beam_type=BeamType.ION,
-                                    steps=MAX_ALIGNMENT_ATTEMPTS)
+    alignment.multi_step_alignment_v2(
+        microscope=microscope,
+        ref_image=ref_image,
+        beam_type=BeamType.ION,
+        use_autofocus=protocol.tmp.get("autofocus_during_alignment", False),
+        steps=MAX_ALIGNMENT_ATTEMPTS,
+    )
 
 
     log_status_message(lamella, "SETUP_PATTERNS")
