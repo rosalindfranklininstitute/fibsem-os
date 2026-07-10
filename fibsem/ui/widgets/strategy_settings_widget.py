@@ -22,6 +22,7 @@ from fibsem.ui.widgets.custom_widgets import (
     QFilePathLineEdit,
     ValueComboBox,
     ValueSpinBox,
+    IntegerValueSpinBox,
 )
 
 
@@ -60,7 +61,9 @@ class FibsemStrategySettingsWidget(QWidget):
         # Strategy type selector — fixed, not rebuilt
         type_form = QFormLayout()
         type_form.setContentsMargins(0, 0, 0, 0)
-        self._type_combo = ValueComboBox(get_strategy_names(), value=self._strategy.name)
+        self._type_combo = ValueComboBox(
+            get_strategy_names(), value=self._strategy.name
+        )
         type_form.addRow("Strategy:", self._type_combo)
         outer.addLayout(type_form)
 
@@ -103,7 +106,12 @@ class FibsemStrategySettingsWidget(QWidget):
             type_ = m.get("type")
             base_scale = m.get("scale")
             dims = m.get("dimensions")
-            effective_scale = (base_scale ** dims) if (base_scale and dims) else base_scale
+            effective_scale = (
+                (base_scale**dims) if (base_scale and dims) else base_scale
+            )
+
+            if effective_scale is None:
+                effective_scale = 1
 
             if items:
                 control = ValueComboBox(
@@ -118,16 +126,36 @@ class FibsemStrategySettingsWidget(QWidget):
             elif type_ is bool or isinstance(value, bool):
                 control = QCheckBox()
                 control.setChecked(bool(value))
-            elif isinstance(value, (float, int)):
+            elif type_ is int:
+                effective_scale = int(round(effective_scale))
+                suffix = (
+                    utils._get_display_unit(base_scale, m.get("unit"))
+                    if base_scale
+                    else (m.get("unit") or "")
+                )
+                # Ensure integer types don't have a step size under the effective scale or 1
+                step = max(m.get("step", 1), effective_scale)
+                control = IntegerValueSpinBox(
+                    suffix,
+                    m.get("minimum"),
+                    m.get("maximum"),
+                    step,
+                )
+                control.setValue(int(round(value * effective_scale)))
+            elif isinstance(value, (float, int)) or type_ is float:
                 suffix = (
                     utils._get_display_unit(base_scale, m.get("unit"))
                     if base_scale
                     else (m.get("unit") or "")
                 )
                 control = ValueSpinBox(
-                    suffix, m.get("minimum"), m.get("maximum"), m.get("step"), m.get("decimals")
+                    suffix,
+                    m.get("minimum"),
+                    m.get("maximum"),
+                    m.get("step"),
+                    m.get("decimals"),
                 )
-                control.setValue(value * effective_scale if effective_scale else value)
+                control.setValue(value * effective_scale)
             else:
                 logging.warning("Control for '%s' is unsupported", field_name)
                 continue  # unsupported type
@@ -143,18 +171,26 @@ class FibsemStrategySettingsWidget(QWidget):
 
             if isinstance(control, ValueComboBox):
                 control.currentIndexChanged.connect(self._on_changed)
-            elif isinstance(control, ValueSpinBox):
+            elif isinstance(control, (ValueSpinBox, IntegerValueSpinBox)):
                 control.valueChanged.connect(self._on_changed)
             elif isinstance(control, QCheckBox):
                 control.toggled.connect(self._on_changed)
+            elif isinstance(control, QFilePathLineEdit):
+                control.editingFinished.connect(self._on_changed)
+            else:
+                raise TypeError(
+                    f"Unsupported control type '{type(control)}' in FibsemPatternSettingsWidget"
+                )
 
-            self._rows.append(FormRow(
-                label=label,
-                control=control,
-                field=field_name,
-                advanced=advanced,
-                scale=effective_scale,
-            ))
+            self._rows.append(
+                FormRow(
+                    label=label,
+                    control=control,
+                    field=field_name,
+                    advanced=advanced,
+                    scale=effective_scale,
+                )
+            )
 
         self._empty_label.setVisible(len(self._rows) == 0)
         self._update_visibility()
@@ -202,9 +238,24 @@ class FibsemStrategySettingsWidget(QWidget):
                     setattr(strategy.config, row.field, data)
             elif isinstance(row.control, ValueSpinBox):
                 val = row.control.value()
-                setattr(strategy.config, row.field, val / row.scale if row.scale else val)
+                setattr(
+                    strategy.config, row.field, val / row.scale if row.scale else val
+                )
+            elif isinstance(row.control, IntegerValueSpinBox):
+                val = row.control.value()
+                setattr(
+                    strategy.config,
+                    row.field,
+                    int(round(val / row.scale if row.scale else val)),
+                )
             elif isinstance(row.control, QCheckBox):
                 setattr(strategy.config, row.field, row.control.isChecked())
+            elif isinstance(row.control, QFilePathLineEdit):
+                setattr(strategy.config, row.field, row.control.text())
+            else:
+                raise TypeError(
+                    f"Unsupported control type '{type(row.control)}' in FibsemStrategySettingsWidget"
+                )
         return strategy
 
     def set_strategy(self, strategy: MillingStrategy[Any]) -> None:
@@ -226,7 +277,17 @@ class FibsemStrategySettingsWidget(QWidget):
                 row.control.set_value(value)
             elif isinstance(row.control, ValueSpinBox):
                 row.control.setValue(value * row.scale if row.scale else value)
+            elif isinstance(row.control, IntegerValueSpinBox):
+                row.control.setValue(
+                    int(round(value * row.scale if row.scale else value))
+                )
             elif isinstance(row.control, QCheckBox):
                 row.control.setChecked(bool(value))
+            elif isinstance(row.control, QFilePathLineEdit):
+                row.control.setText(str(value) if value else "")
+            else:
+                raise TypeError(
+                    f"Unsupported control type '{type(row.control)}' in FibsemStrategySettingsWidget"
+                )
         for row in self._rows:
             row.control.blockSignals(False)
